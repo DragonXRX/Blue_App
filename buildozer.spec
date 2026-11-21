@@ -31,8 +31,11 @@ android.api = 33
 # (int) Minimum API your APK will support.
 android.minapi = 21
 
+# (bool) Automatically accept Android SDK licenses
+android.accept_sdk_license = True
+
 # (list) The Android architectures to build for
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a
 
 # (bool) Indicate if the application should be fullscreen
 fullscreen = 0
