@@ -2,6 +2,7 @@
 Main Chat Screen:
 Assembles WhatsApp-themed top bar, chat history list, and bottom input controls.
 Integrates with Transport, Protocol, and MediaManager.
+Uses clean standard typography (no emoji glyphs) to ensure flawless rendering across all platforms.
 """
 import os
 import time
@@ -60,15 +61,22 @@ class ChatScreen(Screen):
         self.top_bar.bind(pos=lambda *_: setattr(self.top_bar_rect, 'pos', self.top_bar.pos),
                           size=lambda *_: setattr(self.top_bar_rect, 'size', self.top_bar.size))
 
-        # Avatar / Icon
-        avatar_lbl = Label(text="👤", font_size="22sp", size_hint=(None, None), size=(dp(40), dp(40)))
+        # Avatar / Badge
+        avatar_lbl = Label(
+            text="[P2P]",
+            font_size="14sp",
+            bold=True,
+            size_hint=(None, None),
+            size=(dp(46), dp(38)),
+            color=(0.9, 1.0, 0.9, 1.0)
+        )
         self.top_bar.add_widget(avatar_lbl)
 
         # Contact Name & Status
         contact_box = BoxLayout(orientation="vertical")
         self.name_lbl = Label(
-            text="BlueChat (غير متصل)",
-            font_size="16sp",
+            text="BlueChat (Disconnected)",
+            font_size="15sp",
             bold=True,
             halign="left",
             valign="middle",
@@ -77,7 +85,7 @@ class ChatScreen(Screen):
         self.name_lbl.bind(size=lambda *_: setattr(self.name_lbl, 'text_size', self.name_lbl.size))
 
         self.status_lbl = Label(
-            text="● غير متصل - اضغط على اقتران للبدء",
+            text="[Offline - Tap Devices]",
             font_size="11sp",
             halign="left",
             valign="middle",
@@ -91,23 +99,25 @@ class ChatScreen(Screen):
 
         # Top Bar Action Buttons
         self.server_btn = Button(
-            text="استماع 📡",
+            text="Listen",
             size_hint=(None, None),
-            size=(dp(75), dp(36)),
+            size=(dp(70), dp(36)),
             background_color=COLOR_TEAL_LIGHT,
             color=(1, 1, 1, 1),
-            font_size="11sp"
+            font_size="12sp",
+            bold=True
         )
         self.server_btn.bind(on_release=self._start_server_mode)
         self.top_bar.add_widget(self.server_btn)
 
         self.pair_btn = Button(
-            text="الأجهزة 🔗",
+            text="Devices",
             size_hint=(None, None),
             size=(dp(75), dp(36)),
             background_color=COLOR_TEAL_LIGHT,
             color=(1, 1, 1, 1),
-            font_size="11sp"
+            font_size="12sp",
+            bold=True
         )
         self.pair_btn.bind(on_release=self._show_paired_devices_dialog)
         self.top_bar.add_widget(self.pair_btn)
@@ -150,18 +160,20 @@ class ChatScreen(Screen):
 
         # Media / Video Attachment Button
         self.attach_btn = Button(
-            text="📎",
-            font_size="20sp",
+            text="+",
+            font_size="22sp",
+            bold=True,
             size_hint=(None, None),
-            size=(dp(40), dp(40)),
-            background_color=(0.85, 0.85, 0.85, 1.0)
+            size=(dp(42), dp(40)),
+            background_color=(0.85, 0.85, 0.85, 1.0),
+            color=(0.2, 0.2, 0.2, 1.0)
         )
         self.attach_btn.bind(on_release=self._open_file_picker)
         self.input_bar.add_widget(self.attach_btn)
 
         # Text input field
         self.text_input = TextInput(
-            hint_text="اكتب رسالة...",
+            hint_text="Type a message...",
             multiline=False,
             font_size="15sp",
             size_hint_y=None,
@@ -173,21 +185,24 @@ class ChatScreen(Screen):
 
         # Voice Note Record Button
         self.mic_btn = Button(
-            text="🎙️",
-            font_size="18sp",
+            text="Mic",
+            font_size="13sp",
+            bold=True,
             size_hint=(None, None),
-            size=(dp(40), dp(40)),
-            background_color=COLOR_TEAL_LIGHT
+            size=(dp(46), dp(40)),
+            background_color=COLOR_TEAL_LIGHT,
+            color=(1, 1, 1, 1)
         )
         self.mic_btn.bind(on_release=self._toggle_voice_record)
         self.input_bar.add_widget(self.mic_btn)
 
         # Send Button (WhatsApp Green Accent)
         self.send_btn = Button(
-            text="➤",
-            font_size="18sp",
+            text="Send",
+            font_size="13sp",
+            bold=True,
             size_hint=(None, None),
-            size=(dp(40), dp(40)),
+            size=(dp(56), dp(40)),
             background_color=COLOR_GREEN_ACCENT,
             color=(1, 1, 1, 1)
         )
@@ -211,16 +226,16 @@ class ChatScreen(Screen):
 
     def _update_connection_ui(self, is_connected: bool, peer_name: str):
         if is_connected:
-            self.name_lbl.text = peer_name or "متصل"
-            self.status_lbl.text = "● متصل الآن (Online)"
+            self.name_lbl.text = peer_name or "Connected Peer"
+            self.status_lbl.text = "[Online]"
             self.status_lbl.color = COLOR_GREEN_ACCENT
         else:
-            self.name_lbl.text = "BlueChat (غير متصل)"
-            self.status_lbl.text = "● غير متصل - اضغط على اقتران"
+            self.name_lbl.text = "BlueChat (Disconnected)"
+            self.status_lbl.text = "[Offline - Tap Devices]"
             self.status_lbl.color = (0.8, 0.2, 0.2, 1.0)
 
     def _on_transport_error(self, err_msg: str):
-        Clock.schedule_once(lambda dt: setattr(self.status_lbl, 'text', f"خطأ: {err_msg[:30]}"))
+        Clock.schedule_once(lambda dt: setattr(self.status_lbl, 'text', f"Error: {err_msg[:30]}"))
 
     def _on_raw_data_received(self, raw_bytes: bytes):
         self.parser.feed(raw_bytes)
@@ -264,7 +279,6 @@ class ChatScreen(Screen):
                 print(f"[ChatScreen] Error receiving media meta: {e}")
 
         elif pkt.pkt_type == PKT_PROGRESS:
-            # Chunk data: 12 bytes file_id + 4 bytes chunk_index + 4 bytes total + raw chunk
             import struct
             header_size = struct.calcsize(">12sII")
             if len(pkt.payload) >= header_size:
@@ -350,7 +364,6 @@ class ChatScreen(Screen):
         if not os.path.exists(filepath):
             return
         try:
-            # On desktop: open with default system media player
             if os.name == 'nt':
                 os.startfile(filepath)
             else:
@@ -363,20 +376,19 @@ class ChatScreen(Screen):
         if not self.media_manager.is_recording:
             # Start recording
             self.media_manager.start_voice_recording()
-            self.mic_btn.text = "⏹️"
+            self.mic_btn.text = "STOP"
             self.mic_btn.background_color = (0.9, 0.2, 0.2, 1.0)
-            self.status_lbl.text = "🔴 جاري تسجيل مقطع صوتي..."
+            self.status_lbl.text = "[Recording Voice Note...]"
         else:
             # Stop recording and send
             filepath, duration = self.media_manager.stop_voice_recording()
-            self.mic_btn.text = "🎙️"
+            self.mic_btn.text = "Mic"
             self.mic_btn.background_color = COLOR_TEAL_LIGHT
-            self.status_lbl.text = "● متصل" if self.transport.is_connected else "● غير متصل"
+            self.status_lbl.text = "[Online]" if self.transport.is_connected else "[Offline]"
 
             if filepath and os.path.exists(filepath):
                 timestamp_str = time.strftime("%H:%M")
                 self._add_voice_bubble(filepath, duration, timestamp_str, is_outgoing=True)
-                # Send across transport in background thread
                 threading.Thread(target=self._send_media_file, args=(filepath, PKT_AUDIO, duration), daemon=True).start()
 
     def _open_file_picker(self, *args):
@@ -386,14 +398,14 @@ class ChatScreen(Screen):
         content.add_widget(file_chooser)
 
         btn_row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
-        select_btn = Button(text="إرسال الفيديو", background_color=COLOR_GREEN_ACCENT)
-        cancel_btn = Button(text="إلغاء", background_color=(0.7, 0.7, 0.7, 1.0))
+        select_btn = Button(text="Send File", background_color=COLOR_GREEN_ACCENT, bold=True)
+        cancel_btn = Button(text="Cancel", background_color=(0.7, 0.7, 0.7, 1.0))
 
         btn_row.add_widget(cancel_btn)
         btn_row.add_widget(select_btn)
         content.add_widget(btn_row)
 
-        popup = Popup(title="اختر مقطع فيديو لإرساله عبر البلوتوث", content=content, size_hint=(0.9, 0.9))
+        popup = Popup(title="Select Media File to Send", content=content, size_hint=(0.9, 0.9))
 
         def _on_select(*_):
             if file_chooser.selection:
@@ -423,7 +435,6 @@ class ChatScreen(Screen):
         self.messages_box.add_widget(bubble)
         self._scroll_to_bottom()
 
-        # Send in background thread with chunking
         threading.Thread(target=self._send_media_file, args=(filepath, PKT_VIDEO, 0.0, bubble), daemon=True).start()
 
     def _send_media_file(self, filepath: str, pkt_type: int, duration: float = 0.0, bubble_widget=None):
@@ -478,13 +489,13 @@ class ChatScreen(Screen):
         dev_list_box.bind(minimum_height=dev_list_box.setter('height'))
 
         popup = Popup(
-            title="الأجهزة المقترنة (اختر جهازاً للاتصال)",
+            title="Paired Devices (Tap to connect)",
             content=content,
             size_hint=(0.85, 0.7)
         )
 
         if not devices:
-            dev_list_box.add_widget(Label(text="لا توجد أجهزة مقترنة.\nيرجى إقران الهاتف أولاً من إعدادات البلوتوث.", size_hint_y=None, height=dp(60)))
+            dev_list_box.add_widget(Label(text="No paired devices found.\nPlease pair your phone first in Bluetooth settings.", size_hint_y=None, height=dp(60)))
         else:
             for dev in devices:
                 btn = Button(
@@ -499,19 +510,19 @@ class ChatScreen(Screen):
         scroll.add_widget(dev_list_box)
         content.add_widget(scroll)
 
-        close_btn = Button(text="إغلاق", size_hint_y=None, height=dp(36))
+        close_btn = Button(text="Close", size_hint_y=None, height=dp(36))
         close_btn.bind(on_release=popup.dismiss)
         content.add_widget(close_btn)
         popup.open()
 
     def _connect_to_addr(self, address: str, popup: Popup):
         popup.dismiss()
-        self.status_lbl.text = "● جاري الاتصال بالطرف الآخر..."
+        self.status_lbl.text = "[Connecting...]"
         self.status_lbl.color = (0.9, 0.6, 0.1, 1.0)
         self.transport.connect_to_device(address)
 
     def _start_server_mode(self, *args):
-        self.status_lbl.text = "● وضع الاستماع نشط (في انتظار اتصال الطرف الآخر)..."
+        self.status_lbl.text = "[Listening for connection...]"
         self.status_lbl.color = (0.9, 0.6, 0.1, 1.0)
         self.transport.start_server()
 
