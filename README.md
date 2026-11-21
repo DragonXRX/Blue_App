@@ -1,7 +1,5 @@
 # 📱 BlueChat — WhatsApp-style Offline Bluetooth Messenger
 
-> **Language**: **English** | [Arabic Version (العربية)](README_AR.md)
-
 **BlueChat** is a peer-to-peer (P2P) messaging application that works completely **offline** without internet over Bluetooth RFCOMM channels, built with **Python** & **Kivy**.
 
 ---
