@@ -10,7 +10,9 @@ import math
 import threading
 from kivy.uix.screenmanager import Screen
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.effects.scroll import ScrollEffect
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -153,7 +155,7 @@ class ChatScreen(Screen):
 
         root.add_widget(self.top_bar)
 
-        # 2. Chat Messages Area (Telegram Light Chat Background)
+        # 2. Chat Messages Area (Anchored to TOP without bouncing)
         chat_bg_layout = BoxLayout(orientation="vertical")
         with chat_bg_layout.canvas.before:
             Color(*COLOR_CHAT_BG)
@@ -161,15 +163,26 @@ class ChatScreen(Screen):
         chat_bg_layout.bind(pos=lambda *_: setattr(self.chat_rect, 'pos', chat_bg_layout.pos),
                             size=lambda *_: setattr(self.chat_rect, 'size', chat_bg_layout.size))
 
-        self.scroll_view = ScrollView(do_scroll_x=False)
+        self.scroll_view = ScrollView(
+            do_scroll_x=False,
+            do_scroll_y=True,
+            effect_cls=ScrollEffect,
+            scroll_y=1
+        )
+        self.anchor_container = AnchorLayout(
+            anchor_x="center",
+            anchor_y="top",
+            size_hint_y=None
+        )
         self.messages_box = BoxLayout(
             orientation="vertical",
             size_hint_y=None,
             padding=[dp(10), dp(10), dp(10), dp(10)],
             spacing=dp(8)
         )
-        self.messages_box.bind(minimum_height=self.messages_box.setter('height'))
-        self.scroll_view.add_widget(self.messages_box)
+        self.messages_box.bind(minimum_height=self._on_messages_height_change)
+        self.anchor_container.add_widget(self.messages_box)
+        self.scroll_view.add_widget(self.anchor_container)
         chat_bg_layout.add_widget(self.scroll_view)
         root.add_widget(chat_bg_layout)
 
@@ -638,6 +651,7 @@ class ChatScreen(Screen):
     def _clear_chat(self, *args):
         self.messages_box.clear_widgets()
         self.active_video_bubbles.clear()
+        self.scroll_view.scroll_y = 1
 
     def _show_paired_devices_dialog(self, *args):
         devices = self.transport.get_paired_devices()
@@ -686,5 +700,12 @@ class ChatScreen(Screen):
         self.status_lbl.color = (0.9, 0.95, 1.0, 1.0)
         self.transport.start_server()
 
+    def _on_messages_height_change(self, instance, min_height):
+        instance.height = min_height
+        # Anchor container matches screen height or message height to lock messages cleanly to the top
+        self.anchor_container.height = max(self.scroll_view.height, min_height)
+
     def _scroll_to_bottom(self):
-        Clock.schedule_once(lambda dt: setattr(self.scroll_view, 'scroll_y', 0), 0.1)
+        # Prevent bounce/jumping: only scroll when content exceeds screen height
+        if self.messages_box.height > self.scroll_view.height:
+            self.scroll_view.scroll_y = 0
