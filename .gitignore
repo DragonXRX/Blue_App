@@ -1,0 +1,19 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Kivy logs and caches
+.kivy/
+.bluechat_cache/
+*.log
+
+# Buildozer and Android build artifacts
+.buildozer/
+bin/
+*.apk
+*.aab
+
+# OS generated files
+.DS_Store
+Thumbs.db
