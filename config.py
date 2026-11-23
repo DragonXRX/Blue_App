@@ -1,5 +1,5 @@
 """
-Configuration and constants for BlueChat (WhatsApp-style Bluetooth Messenger).
+Configuration and constants for BlueChat (Telegram-style Bluetooth Messenger).
 Cross-platform safe for Android and Desktop.
 """
 import os
@@ -7,17 +7,19 @@ import sys
 
 # Application Info
 APP_NAME = "BlueChat"
-APP_VERSION = "1.1.0"
+APP_VERSION = "2.0.0"
 
-# WhatsApp Palette Colors (Hex strings & RGBA tuples for Kivy)
-COLOR_TEAL_DARK = (0.027, 0.369, 0.329, 1.0)       # #075E54 - Top App Bar
-COLOR_TEAL_LIGHT = (0.071, 0.549, 0.494, 1.0)      # #128C7E - Secondary elements
-COLOR_GREEN_ACCENT = (0.145, 0.827, 0.400, 1.0)    # #25D366 - Send button / Online status
-COLOR_CHAT_BG = (0.925, 0.898, 0.867, 1.0)         # #ECE5DD - WhatsApp chat background
-COLOR_BUBBLE_OUT = (0.863, 0.969, 0.776, 1.0)      # #DCF8C6 - Outgoing message bubble (light green)
-COLOR_BUBBLE_IN = (1.0, 1.0, 1.0, 1.0)              # #FFFFFF - Incoming message bubble (pure white)
-COLOR_TEXT_PRIMARY = (0.1, 0.1, 0.1, 1.0)          # Text color
-COLOR_TEXT_MUTED = (0.5, 0.5, 0.5, 1.0)            # Timestamp and status text
+# Telegram Modern Blue Palette
+COLOR_TELEGRAM_BLUE = (0.137, 0.616, 0.847, 1.0)    # #239ED8 - Telegram Header
+COLOR_TELEGRAM_DARK = (0.102, 0.455, 0.627, 1.0)    # #1A74A0 - Header shadow / borders
+COLOR_TELEGRAM_ACCENT = (0.157, 0.655, 0.898, 1.0)  # #28A7E5 - Send button / Active icons
+COLOR_CHAT_BG = (0.878, 0.914, 0.941, 1.0)         # #E0E9F0 - Telegram light chat background
+COLOR_BUBBLE_OUT = (0.824, 0.922, 0.984, 1.0)      # #D2EBFB - Outgoing message (Telegram soft blue)
+COLOR_BUBBLE_IN = (1.0, 1.0, 1.0, 1.0)              # #FFFFFF - Incoming message (pure white)
+COLOR_TEXT_PRIMARY = (0.13, 0.13, 0.13, 1.0)       # Charcoal text
+COLOR_TEXT_MUTED = (0.50, 0.58, 0.64, 1.0)         # Timestamp & read status
+COLOR_AVATAR_BG = (0.28, 0.65, 0.90, 1.0)          # Telegram avatar circle
+COLOR_INPUT_CONTAINER = (1.0, 1.0, 1.0, 1.0)       # White input bar container
 
 # Bluetooth Standard Serial Port Profile (SPP) UUID
 SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
