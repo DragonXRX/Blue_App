@@ -24,7 +24,7 @@ from kivy.utils import platform
 
 from config import (
     COLOR_TEAL_DARK, COLOR_TEAL_LIGHT, COLOR_GREEN_ACCENT,
-    COLOR_CHAT_BG, COLOR_DISCONNECTED, CHUNK_SIZE,
+    COLOR_CHAT_BG, CHUNK_SIZE,
     PKT_TEXT, PKT_AUDIO, PKT_VIDEO, PKT_IMAGE, PKT_PROGRESS,
     PKT_TYPING, PKT_PING, get_media_dir, get_default_picker_dir
 )

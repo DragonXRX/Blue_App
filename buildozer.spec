@@ -13,7 +13,7 @@ package.domain = org.bluechat.app
 source.dir = .
 
 # (list) Source files to include (let empty to include all the source directory)
-source.include_exts = py,png,jpg,kv,atlas,wav,json
+source.include_exts = py,png,jpg,jpeg,3gp,wav
 
 # (str) Application versioning
 version = 1.0.0

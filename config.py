@@ -18,9 +18,6 @@ COLOR_BUBBLE_OUT = (0.863, 0.969, 0.776, 1.0)      # #DCF8C6 - Outgoing message 
 COLOR_BUBBLE_IN = (1.0, 1.0, 1.0, 1.0)              # #FFFFFF - Incoming message bubble (pure white)
 COLOR_TEXT_PRIMARY = (0.1, 0.1, 0.1, 1.0)          # Text color
 COLOR_TEXT_MUTED = (0.5, 0.5, 0.5, 1.0)            # Timestamp and status text
-COLOR_DISCONNECTED = (0.85, 0.25, 0.25, 1.0)        # Disconnected red indicator
-COLOR_CONNECTING = (0.95, 0.65, 0.15, 1.0)          # Connecting amber indicator
-COLOR_INPUT_BG = (1.0, 1.0, 1.0, 1.0)              # White rounded input container
 
 # Bluetooth Standard Serial Port Profile (SPP) UUID
 SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
@@ -36,11 +33,9 @@ PKT_TEXT = 0x01
 PKT_AUDIO = 0x02
 PKT_VIDEO = 0x03
 PKT_IMAGE = 0x04
-PKT_FILE = 0x05
-PKT_PROGRESS = 0x06
-PKT_ACK = 0x07
-PKT_TYPING = 0x08
-PKT_PING = 0x09
+PKT_PROGRESS = 0x05
+PKT_TYPING = 0x06
+PKT_PING = 0x07
 
 # Desktop Simulation Ports
 DEFAULT_SIM_PORT_SERVER = 8888
