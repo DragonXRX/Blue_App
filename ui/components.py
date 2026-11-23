@@ -1,8 +1,8 @@
 """
-UI components with WhatsApp aesthetic:
-- Chat bubbles for Text, Voice Notes, Videos, and Photos/Images.
-- Transfer speed & ETA display for large media.
-- Clean typography and rounded bubble styling.
+UI components with Telegram aesthetic:
+- Telegram Blue theme (#239ED8 / #28A7E5).
+- Chat bubbles for Text, Voice Notes, Videos, and Photos.
+- Crisp vector-styled circular action buttons and pill badges.
 """
 import os
 from kivy.uix.boxlayout import BoxLayout
@@ -10,16 +10,16 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.image import AsyncImage
 from kivy.uix.progressbar import ProgressBar
-from kivy.graphics import Color, RoundedRectangle
+from kivy.graphics import Color, RoundedRectangle, Ellipse, Line
 from kivy.metrics import dp
+
 from config import (
-    COLOR_TEAL_DARK, COLOR_TEAL_LIGHT, COLOR_GREEN_ACCENT,
-    COLOR_BUBBLE_OUT, COLOR_BUBBLE_IN, COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_MUTED
+    COLOR_TELEGRAM_BLUE, COLOR_TELEGRAM_ACCENT, COLOR_BUBBLE_OUT,
+    COLOR_BUBBLE_IN, COLOR_TEXT_PRIMARY, COLOR_TEXT_MUTED
 )
 
 class BubbleBase(BoxLayout):
-    """Base class for chat bubbles with WhatsApp-like rounded background."""
+    """Base class for Telegram-style message bubbles with smooth rounded corners."""
     def __init__(self, is_outgoing: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.is_outgoing = is_outgoing
@@ -29,16 +29,19 @@ class BubbleBase(BoxLayout):
         self.padding = [dp(12), dp(8), dp(12), dp(8)]
         self.spacing = dp(4)
 
-        # Bubble color: light green for outgoing, white for incoming
+        # Telegram bubble colors: soft cyan-blue for outgoing, pure white for incoming
         self.bg_color = COLOR_BUBBLE_OUT if is_outgoing else COLOR_BUBBLE_IN
         self.pos_hint = {"right": 0.98} if is_outgoing else {"x": 0.02}
+
+        # Corner radiuses: small tail on the sending side
+        corner_radii = [dp(16), dp(16), dp(3) if is_outgoing else dp(16), dp(16) if is_outgoing else dp(3)]
 
         with self.canvas.before:
             self.color_instruction = Color(*self.bg_color)
             self.rect_instruction = RoundedRectangle(
                 pos=self.pos,
                 size=self.size,
-                radius=[dp(14), dp(14), dp(2) if is_outgoing else dp(14), dp(14) if is_outgoing else dp(2)]
+                radius=corner_radii
             )
         self.bind(pos=self._update_rect, size=self._update_rect)
 
@@ -48,7 +51,7 @@ class BubbleBase(BoxLayout):
 
 
 class TextMessageBubble(BubbleBase):
-    """WhatsApp-style text message bubble."""
+    """Telegram-style text message bubble."""
     def __init__(self, text: str, timestamp_str: str, is_outgoing: bool = True, **kwargs):
         super().__init__(is_outgoing=is_outgoing, **kwargs)
 
@@ -84,35 +87,41 @@ class TextMessageBubble(BubbleBase):
 
 
 class VoiceNoteBubble(BubbleBase):
-    """WhatsApp-style voice note bubble with clean playback controls."""
+    """Telegram-style voice note bubble with circular play button."""
     def __init__(self, filepath: str, duration: float, timestamp_str: str, is_outgoing: bool = True, on_play=None, **kwargs):
         super().__init__(is_outgoing=is_outgoing, **kwargs)
         self.filepath = filepath
         self.duration = duration
         self.on_play = on_play
         self.is_playing = False
-        self.height = dp(75)
+        self.height = dp(76)
 
-        row = BoxLayout(orientation="horizontal", spacing=dp(8), size_hint_y=None, height=dp(40))
+        row = BoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None, height=dp(42))
 
-        # Play/Pause button
+        # Telegram Circular Play/Pause button
         self.play_btn = Button(
             text="Play",
-            font_size="13sp",
+            font_size="12sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(52), dp(36)),
-            background_color=COLOR_TEAL_LIGHT,
+            size=(dp(44), dp(44)),
+            background_normal="",
+            background_color=(0, 0, 0, 0),
             color=(1, 1, 1, 1)
         )
+        with self.play_btn.canvas.before:
+            Color(*COLOR_TELEGRAM_ACCENT)
+            self.play_circle = Ellipse(pos=self.play_btn.pos, size=self.play_btn.size)
+        self.play_btn.bind(pos=lambda *_: setattr(self.play_circle, 'pos', self.play_btn.pos),
+                           size=lambda *_: setattr(self.play_circle, 'size', self.play_btn.size))
         self.play_btn.bind(on_release=self._toggle_play)
         row.add_widget(self.play_btn)
 
         # Voice info layout
         info_box = BoxLayout(orientation="vertical", spacing=dp(2))
         self.title_label = Label(
-            text="Voice Note",
-            color=COLOR_TEAL_DARK,
+            text="Voice Message",
+            color=COLOR_TELEGRAM_ACCENT,
             font_size="13sp",
             bold=True,
             halign="left"
@@ -156,18 +165,18 @@ class VoiceNoteBubble(BubbleBase):
 
 
 class ImageMessageBubble(BubbleBase):
-    """WhatsApp-style photo message bubble with inline image preview."""
+    """Telegram-style photo message bubble with rounded preview."""
     def __init__(self, filepath: str, filename: str, timestamp_str: str, is_outgoing: bool = True, on_open_image=None, **kwargs):
         super().__init__(is_outgoing=is_outgoing, **kwargs)
         self.filepath = filepath
         self.on_open_image = on_open_image
-        self.height = dp(210)
+        self.height = dp(215)
 
         # Inline image view
         self.img_view = AsyncImage(
             source=filepath if os.path.exists(filepath) else "",
             size_hint_y=None,
-            height=dp(150),
+            height=dp(155),
             allow_stretch=True,
             keep_ratio=True
         )
@@ -198,7 +207,7 @@ class ImageMessageBubble(BubbleBase):
 
 
 class VideoMessageBubble(BubbleBase):
-    """WhatsApp-style video message bubble with filename, speed, progress bar, and play action."""
+    """Telegram-style video message card with blue progress bar and watch action."""
     def __init__(self, filepath: str, filename: str, file_size: int, timestamp_str: str, is_outgoing: bool = True, on_open_video=None, **kwargs):
         super().__init__(is_outgoing=is_outgoing, **kwargs)
         self.filepath = filepath
@@ -209,11 +218,11 @@ class VideoMessageBubble(BubbleBase):
         header_box = BoxLayout(orientation="horizontal", spacing=dp(8), size_hint_y=None, height=dp(36))
         video_tag = Label(
             text="[VIDEO]",
-            color=COLOR_TEAL_DARK,
+            color=COLOR_TELEGRAM_ACCENT,
             font_size="12sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(55), dp(36))
+            size=(dp(58), dp(36))
         )
         header_box.add_widget(video_tag)
 
@@ -242,15 +251,16 @@ class VideoMessageBubble(BubbleBase):
         self.add_widget(header_box)
 
         # Progress bar
-        self.progress_bar = ProgressBar(max=100, value=100, size_hint_y=None, height=dp(12))
+        self.progress_bar = ProgressBar(max=100, value=100, size_hint_y=None, height=dp(10))
         self.add_widget(self.progress_bar)
 
         # Action button (Open / Watch Video)
         self.action_btn = Button(
             text="Play Video",
             size_hint_y=None,
-            height=dp(28),
-            background_color=COLOR_TEAL_LIGHT,
+            height=dp(30),
+            background_normal="",
+            background_color=COLOR_TELEGRAM_ACCENT,
             color=(1, 1, 1, 1),
             font_size="12sp",
             bold=True

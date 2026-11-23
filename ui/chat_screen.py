@@ -1,9 +1,8 @@
 """
-Main Chat Screen (Version 1.1.0):
-- WhatsApp-themed top bar with Real-time Typing indicator & Heartbeat.
-- Instant Text, Voice Notes with waveforms, Videos with transfer speed, and Photos.
-- Floating Send/Mic actions and rounded input styling.
-- Clear Chat & Disconnect management.
+Main Chat Screen (Telegram Blue Edition):
+- Telegram Blue Header (#239ED8) with Circular Avatar & Typing Indicator.
+- Telegram Chat Wallpaper (#E0E9F0) & Bubble Aesthetics.
+- Floating Circular Send Button & Rounded Action Pills.
 """
 import os
 import time
@@ -18,13 +17,13 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserListView
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+from kivy.graphics import Color, Rectangle, RoundedRectangle, Ellipse
 from kivy.metrics import dp
 from kivy.utils import platform
 
 from config import (
-    COLOR_TEAL_DARK, COLOR_TEAL_LIGHT, COLOR_GREEN_ACCENT,
-    COLOR_CHAT_BG, CHUNK_SIZE,
+    COLOR_TELEGRAM_BLUE, COLOR_TELEGRAM_DARK, COLOR_TELEGRAM_ACCENT,
+    COLOR_CHAT_BG, COLOR_AVATAR_BG, CHUNK_SIZE,
     PKT_TEXT, PKT_AUDIO, PKT_VIDEO, PKT_IMAGE, PKT_PROGRESS,
     PKT_TYPING, PKT_PING, get_media_dir, get_default_picker_dir
 )
@@ -40,50 +39,49 @@ class ChatScreen(Screen):
         self.media_manager = MediaManager()
         self.transfer_manager = TransferManager(save_dir=get_media_dir())
         
-        self.active_video_bubbles = {}  # file_id -> VideoMessageBubble
+        self.active_video_bubbles = {}
         self.current_playing_bubble = None
         self._last_typed_time = 0.0
-        self._is_peer_typing = False
         self._peer_typing_clear_event = None
         self._heartbeat_event = None
 
-        # Build UI
         self._build_ui()
         self._setup_transport_callbacks()
 
     def _build_ui(self):
         root = BoxLayout(orientation="vertical")
 
-        # 1. Top App Bar (WhatsApp Dark Teal)
+        # 1. Top App Bar (Telegram Modern Blue)
         self.top_bar = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(58),
-            padding=[dp(8), dp(4), dp(8), dp(4)],
-            spacing=dp(6)
+            height=dp(60),
+            padding=[dp(10), dp(6), dp(10), dp(6)],
+            spacing=dp(8)
         )
         with self.top_bar.canvas.before:
-            Color(*COLOR_TEAL_DARK)
+            Color(*COLOR_TELEGRAM_BLUE)
             self.top_bar_rect = Rectangle(pos=self.top_bar.pos, size=self.top_bar.size)
         self.top_bar.bind(pos=lambda *_: setattr(self.top_bar_rect, 'pos', self.top_bar.pos),
                           size=lambda *_: setattr(self.top_bar_rect, 'size', self.top_bar.size))
 
-        # Avatar / Badge
-        avatar_lbl = Label(
-            text="[P2P]",
-            font_size="13sp",
-            bold=True,
-            size_hint=(None, None),
-            size=(dp(42), dp(38)),
-            color=(0.9, 1.0, 0.9, 1.0)
-        )
-        self.top_bar.add_widget(avatar_lbl)
+        # Telegram Circular Avatar
+        avatar_box = BoxLayout(size_hint=(None, None), size=(dp(44), dp(44)))
+        with avatar_box.canvas.before:
+            Color(*COLOR_AVATAR_BG)
+            self.avatar_circle = Ellipse(pos=avatar_box.pos, size=avatar_box.size)
+        avatar_box.bind(pos=lambda *_: setattr(self.avatar_circle, 'pos', avatar_box.pos),
+                        size=lambda *_: setattr(self.avatar_circle, 'size', avatar_box.size))
+        
+        avatar_text = Label(text="BC", bold=True, font_size="15sp", color=(1, 1, 1, 1))
+        avatar_box.add_widget(avatar_text)
+        self.top_bar.add_widget(avatar_box)
 
-        # Contact Name & Status (with typing indicator)
+        # Contact Name & Status (Telegram Subtitle)
         contact_box = BoxLayout(orientation="vertical", spacing=dp(1))
         self.name_lbl = Label(
-            text="BlueChat (Disconnected)",
-            font_size="15sp",
+            text="BlueChat",
+            font_size="16sp",
             bold=True,
             halign="left",
             valign="middle",
@@ -92,11 +90,11 @@ class ChatScreen(Screen):
         self.name_lbl.bind(size=lambda *_: setattr(self.name_lbl, 'text_size', self.name_lbl.size))
 
         self.status_lbl = Label(
-            text="[Offline - Tap Devices]",
-            font_size="11sp",
+            text="offline",
+            font_size="12sp",
             halign="left",
             valign="middle",
-            color=(0.85, 0.85, 0.85, 1.0)
+            color=(0.85, 0.94, 1.0, 1.0)
         )
         self.status_lbl.bind(size=lambda *_: setattr(self.status_lbl, 'text_size', self.status_lbl.size))
 
@@ -104,37 +102,50 @@ class ChatScreen(Screen):
         contact_box.add_widget(self.status_lbl)
         self.top_bar.add_widget(contact_box)
 
-        # Top Bar Action Buttons
+        # Top Bar Action Buttons (Telegram Pill Styling)
         self.server_btn = Button(
             text="Listen",
             size_hint=(None, None),
-            size=(dp(64), dp(36)),
-            background_color=COLOR_TEAL_LIGHT,
+            size=(dp(68), dp(34)),
+            background_normal="",
+            background_color=(0.18, 0.68, 0.92, 1.0),
             color=(1, 1, 1, 1),
-            font_size="11sp",
+            font_size="12sp",
             bold=True
         )
+        with self.server_btn.canvas.before:
+            Color(1, 1, 1, 0.25)
+            self.server_btn_rect = RoundedRectangle(pos=self.server_btn.pos, size=self.server_btn.size, radius=[dp(17)])
+        self.server_btn.bind(pos=lambda *_: setattr(self.server_btn_rect, 'pos', self.server_btn.pos),
+                             size=lambda *_: setattr(self.server_btn_rect, 'size', self.server_btn.size))
         self.server_btn.bind(on_release=self._start_server_mode)
         self.top_bar.add_widget(self.server_btn)
 
         self.pair_btn = Button(
             text="Devices",
             size_hint=(None, None),
-            size=(dp(68), dp(36)),
-            background_color=COLOR_TEAL_LIGHT,
+            size=(dp(72), dp(34)),
+            background_normal="",
+            background_color=(0.18, 0.68, 0.92, 1.0),
             color=(1, 1, 1, 1),
-            font_size="11sp",
+            font_size="12sp",
             bold=True
         )
+        with self.pair_btn.canvas.before:
+            Color(1, 1, 1, 0.25)
+            self.pair_btn_rect = RoundedRectangle(pos=self.pair_btn.pos, size=self.pair_btn.size, radius=[dp(17)])
+        self.pair_btn.bind(pos=lambda *_: setattr(self.pair_btn_rect, 'pos', self.pair_btn.pos),
+                           size=lambda *_: setattr(self.pair_btn_rect, 'size', self.pair_btn.size))
         self.pair_btn.bind(on_release=self._show_paired_devices_dialog)
         self.top_bar.add_widget(self.pair_btn)
 
         self.clear_btn = Button(
             text="Clear",
             size_hint=(None, None),
-            size=(dp(54), dp(36)),
-            background_color=(0.2, 0.45, 0.4, 1.0),
-            color=(0.9, 0.9, 0.9, 1.0),
+            size=(dp(54), dp(34)),
+            background_normal="",
+            background_color=(0.18, 0.68, 0.92, 0.6),
+            color=(1, 1, 1, 0.9),
             font_size="11sp"
         )
         self.clear_btn.bind(on_release=self._clear_chat)
@@ -142,7 +153,7 @@ class ChatScreen(Screen):
 
         root.add_widget(self.top_bar)
 
-        # 2. Chat Messages Area (WhatsApp Wallpaper Background)
+        # 2. Chat Messages Area (Telegram Light Chat Background)
         chat_bg_layout = BoxLayout(orientation="vertical")
         with chat_bg_layout.canvas.before:
             Color(*COLOR_CHAT_BG)
@@ -162,69 +173,83 @@ class ChatScreen(Screen):
         chat_bg_layout.add_widget(self.scroll_view)
         root.add_widget(chat_bg_layout)
 
-        # 3. WhatsApp Bottom Input Bar
+        # 3. Telegram Bottom Input Bar (Floating White Pill)
         self.input_bar = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(52),
-            padding=[dp(6), dp(6), dp(6), dp(6)],
-            spacing=dp(6)
+            height=dp(56),
+            padding=[dp(8), dp(6), dp(8), dp(6)],
+            spacing=dp(8)
         )
         with self.input_bar.canvas.before:
-            Color(0.95, 0.95, 0.95, 1.0)
+            Color(0.97, 0.98, 0.99, 1.0)
             self.input_bar_rect = Rectangle(pos=self.input_bar.pos, size=self.input_bar.size)
         self.input_bar.bind(pos=lambda *_: setattr(self.input_bar_rect, 'pos', self.input_bar.pos),
                             size=lambda *_: setattr(self.input_bar_rect, 'size', self.input_bar.size))
 
-        # Media / Photo / Video Attachment Button
+        # Media Attachment Button
         self.attach_btn = Button(
             text="+",
             font_size="22sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(42), dp(40)),
-            background_color=(0.85, 0.85, 0.85, 1.0),
-            color=(0.2, 0.2, 0.2, 1.0)
+            size=(dp(42), dp(42)),
+            background_normal="",
+            background_color=(0.92, 0.94, 0.96, 1.0),
+            color=COLOR_TELEGRAM_ACCENT
         )
+        with self.attach_btn.canvas.before:
+            Color(0.85, 0.90, 0.94, 1.0)
+            self.attach_circle = Ellipse(pos=self.attach_btn.pos, size=self.attach_btn.size)
+        self.attach_btn.bind(pos=lambda *_: setattr(self.attach_circle, 'pos', self.attach_btn.pos),
+                             size=lambda *_: setattr(self.attach_circle, 'size', self.attach_btn.size))
         self.attach_btn.bind(on_release=self._open_file_picker)
         self.input_bar.add_widget(self.attach_btn)
 
-        # Text input field
+        # Rounded Text Input Box (Telegram style)
         self.text_input = TextInput(
-            hint_text="Type a message...",
+            hint_text="Message...",
             multiline=False,
             font_size="15sp",
             size_hint_y=None,
-            height=dp(40),
-            padding=[dp(10), dp(8), dp(10), dp(8)]
+            height=dp(42),
+            background_color=(1, 1, 1, 1),
+            padding=[dp(12), dp(10), dp(12), dp(10)]
         )
         self.text_input.bind(text=self._on_input_text_change)
         self.text_input.bind(on_text_validate=lambda *_: self._send_text_message())
         self.input_bar.add_widget(self.text_input)
 
-        # Voice Note Record Button
+        # Voice Record Button
         self.mic_btn = Button(
             text="Mic",
             font_size="13sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(46), dp(40)),
-            background_color=COLOR_TEAL_LIGHT,
-            color=(1, 1, 1, 1)
+            size=(dp(44), dp(42)),
+            background_normal="",
+            background_color=(0.92, 0.94, 0.96, 1.0),
+            color=COLOR_TELEGRAM_ACCENT
         )
         self.mic_btn.bind(on_release=self._toggle_voice_record)
         self.input_bar.add_widget(self.mic_btn)
 
-        # Send Button (WhatsApp Green Accent)
+        # Telegram Circular Floating Send Button
         self.send_btn = Button(
             text="Send",
             font_size="13sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(56), dp(40)),
-            background_color=COLOR_GREEN_ACCENT,
+            size=(dp(56), dp(42)),
+            background_normal="",
+            background_color=COLOR_TELEGRAM_ACCENT,
             color=(1, 1, 1, 1)
         )
+        with self.send_btn.canvas.before:
+            Color(*COLOR_TELEGRAM_ACCENT)
+            self.send_rect = RoundedRectangle(pos=self.send_btn.pos, size=self.send_btn.size, radius=[dp(21)])
+        self.send_btn.bind(pos=lambda *_: setattr(self.send_rect, 'pos', self.send_btn.pos),
+                           size=lambda *_: setattr(self.send_rect, 'size', self.send_btn.size))
         self.send_btn.bind(on_release=lambda *_: self._send_text_message())
         self.input_bar.add_widget(self.send_btn)
 
@@ -239,7 +264,6 @@ class ChatScreen(Screen):
 
     def _on_connected(self, peer_name):
         Clock.schedule_once(lambda dt: self._update_connection_ui(True, peer_name))
-        # Start keepalive heartbeat every 10 seconds
         if not self._heartbeat_event:
             self._heartbeat_event = Clock.schedule_interval(self._send_heartbeat, 10.0)
 
@@ -257,15 +281,15 @@ class ChatScreen(Screen):
     def _update_connection_ui(self, is_connected: bool, peer_name: str):
         if is_connected:
             self.name_lbl.text = peer_name or "Connected Peer"
-            self.status_lbl.text = "[Online]"
-            self.status_lbl.color = COLOR_GREEN_ACCENT
+            self.status_lbl.text = "online"
+            self.status_lbl.color = (0.75, 0.95, 1.0, 1.0)
         else:
-            self.name_lbl.text = "BlueChat (Disconnected)"
-            self.status_lbl.text = "[Offline - Tap Devices]"
-            self.status_lbl.color = (0.8, 0.2, 0.2, 1.0)
+            self.name_lbl.text = "BlueChat"
+            self.status_lbl.text = "offline"
+            self.status_lbl.color = (0.85, 0.94, 1.0, 0.8)
 
     def _on_transport_error(self, err_msg: str):
-        Clock.schedule_once(lambda dt: setattr(self.status_lbl, 'text', f"Error: {err_msg[:30]}"))
+        Clock.schedule_once(lambda dt: setattr(self.status_lbl, 'text', f"Error: {err_msg[:25]}"))
 
     def _on_input_text_change(self, instance, value):
         now = time.time()
@@ -311,7 +335,6 @@ class ChatScreen(Screen):
                 pass
 
         elif pkt.pkt_type == PKT_PING:
-            # Heartbeat packet received, connection is healthy
             pass
 
         elif pkt.pkt_type in (PKT_AUDIO, PKT_VIDEO, PKT_IMAGE):
@@ -371,10 +394,10 @@ class ChatScreen(Screen):
         if self.transport.is_connected:
             if is_typing:
                 self.status_lbl.text = "typing..."
-                self.status_lbl.color = (0.2, 0.85, 0.4, 1.0)
+                self.status_lbl.color = (0.75, 1.0, 0.85, 1.0)
             else:
-                self.status_lbl.text = "[Online]"
-                self.status_lbl.color = COLOR_GREEN_ACCENT
+                self.status_lbl.text = "online"
+                self.status_lbl.color = (0.75, 0.95, 1.0, 1.0)
 
     def _send_text_message(self):
         text = self.text_input.text.strip()
@@ -452,8 +475,6 @@ class ChatScreen(Screen):
     def _open_media_native(self, filepath: str, mime_type: str):
         if not os.path.exists(filepath):
             return
-        
-        # 1. Android Native Intent viewer
         if platform == "android":
             try:
                 from jnius import autoclass, cast
@@ -475,7 +496,6 @@ class ChatScreen(Screen):
             except Exception as e:
                 print(f"[ChatScreen] Android intent error: {e}")
 
-        # 2. Desktop fallback
         try:
             if os.name == 'nt':
                 os.startfile(filepath)
@@ -489,13 +509,13 @@ class ChatScreen(Screen):
         if not self.media_manager.is_recording:
             self.media_manager.start_voice_recording()
             self.mic_btn.text = "STOP"
-            self.mic_btn.background_color = (0.9, 0.2, 0.2, 1.0)
-            self.status_lbl.text = "[Recording Voice Note...]"
+            self.mic_btn.background_color = (0.9, 0.25, 0.25, 1.0)
+            self.status_lbl.text = "recording..."
         else:
             filepath, duration = self.media_manager.stop_voice_recording()
             self.mic_btn.text = "Mic"
-            self.mic_btn.background_color = COLOR_TEAL_LIGHT
-            self.status_lbl.text = "[Online]" if self.transport.is_connected else "[Offline]"
+            self.mic_btn.background_color = (0.92, 0.94, 0.96, 1.0)
+            self.status_lbl.text = "online" if self.transport.is_connected else "offline"
 
             if filepath and os.path.exists(filepath):
                 timestamp_str = time.strftime("%H:%M")
@@ -503,7 +523,6 @@ class ChatScreen(Screen):
                 threading.Thread(target=self._send_media_file, args=(filepath, PKT_AUDIO, duration), daemon=True).start()
 
     def _open_file_picker(self, *args):
-        """Displays a file chooser popup to select a video/photo file."""
         content = BoxLayout(orientation="vertical")
         start_dir = get_default_picker_dir()
         file_chooser = FileChooserListView(
@@ -513,8 +532,8 @@ class ChatScreen(Screen):
         content.add_widget(file_chooser)
 
         btn_row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
-        select_btn = Button(text="Send Media", background_color=COLOR_GREEN_ACCENT, bold=True)
-        cancel_btn = Button(text="Cancel", background_color=(0.7, 0.7, 0.7, 1.0))
+        select_btn = Button(text="Send Media", background_normal="", background_color=COLOR_TELEGRAM_ACCENT, bold=True)
+        cancel_btn = Button(text="Cancel", background_normal="", background_color=(0.7, 0.7, 0.7, 1.0))
 
         btn_row.add_widget(cancel_btn)
         btn_row.add_widget(select_btn)
@@ -580,7 +599,6 @@ class ChatScreen(Screen):
         filename = os.path.basename(filepath)
         file_id = hashlib.md5(f"{filename}_{time.time()}".encode()).hexdigest()[:12]
 
-        # 1. Send Metadata Packet
         meta_pkt = Packet.create_media_meta_packet(
             pkt_type=pkt_type,
             file_id=file_id,
@@ -590,7 +608,6 @@ class ChatScreen(Screen):
         )
         self.transport.send_data(meta_pkt.pack())
 
-        # 2. Send Chunks with CRC32
         total_chunks = math.ceil(file_size / CHUNK_SIZE) if file_size > 0 else 1
         with open(filepath, "rb") as f:
             chunk_idx = 0
@@ -610,14 +627,12 @@ class ChatScreen(Screen):
                 sent_bytes += len(chunk_data)
                 chunk_idx += 1
 
-                # Update outgoing progress and transfer speed
                 if bubble_widget and file_size > 0:
                     percent = (sent_bytes / file_size) * 100
                     elapsed = max(0.01, time.time() - start_t)
                     speed_kbps = (sent_bytes / 1024.0) / elapsed
                     Clock.schedule_once(lambda dt, p=percent, s=speed_kbps: bubble_widget.set_progress(p, s))
 
-                # Safe pacing for RFCOMM buffers
                 time.sleep(0.008)
 
     def _clear_chat(self, *args):
@@ -633,7 +648,7 @@ class ChatScreen(Screen):
         dev_list_box.bind(minimum_height=dev_list_box.setter('height'))
 
         popup = Popup(
-            title="Paired Devices (Tap to connect)",
+            title="Paired Devices",
             content=content,
             size_hint=(0.85, 0.7)
         )
@@ -646,7 +661,8 @@ class ChatScreen(Screen):
                     text=f"{dev['name']}\n({dev['address']})",
                     size_hint_y=None,
                     height=dp(50),
-                    background_color=COLOR_TEAL_LIGHT
+                    background_normal="",
+                    background_color=COLOR_TELEGRAM_BLUE
                 )
                 btn.bind(on_release=lambda *_, addr=dev['address']: self._connect_to_addr(addr, popup))
                 dev_list_box.add_widget(btn)
@@ -661,13 +677,13 @@ class ChatScreen(Screen):
 
     def _connect_to_addr(self, address: str, popup: Popup):
         popup.dismiss()
-        self.status_lbl.text = "[Connecting...]"
-        self.status_lbl.color = (0.9, 0.6, 0.1, 1.0)
+        self.status_lbl.text = "connecting..."
+        self.status_lbl.color = (0.9, 0.95, 1.0, 1.0)
         self.transport.connect_to_device(address)
 
     def _start_server_mode(self, *args):
-        self.status_lbl.text = "[Listening for connection...]"
-        self.status_lbl.color = (0.9, 0.6, 0.1, 1.0)
+        self.status_lbl.text = "listening..."
+        self.status_lbl.color = (0.9, 0.95, 1.0, 1.0)
         self.transport.start_server()
 
     def _scroll_to_bottom(self):
