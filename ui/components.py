@@ -1,14 +1,14 @@
 """
 UI components with WhatsApp aesthetic:
-- Chat bubbles for Text, Voice Notes, and Video files.
-- Connection status header.
-- Message input bar with voice note recorder and attachment picker.
-Clean ASCII/standard typography to prevent missing glyph boxes on all platforms.
+- Chat bubbles for Text, Voice Notes, Videos, and Photos/Images.
+- Transfer speed & ETA display for large media.
+- Clean typography and rounded bubble styling.
 """
+import os
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.textinput import TextInput
+from kivy.uix.image import AsyncImage
 from kivy.uix.progressbar import ProgressBar
 from kivy.graphics import Color, RoundedRectangle
 from kivy.metrics import dp
@@ -25,7 +25,7 @@ class BubbleBase(BoxLayout):
         self.is_outgoing = is_outgoing
         self.orientation = "vertical"
         self.size_hint_y = None
-        self.size_hint_x = 0.75
+        self.size_hint_x = 0.78
         self.padding = [dp(12), dp(8), dp(12), dp(8)]
         self.spacing = dp(4)
 
@@ -38,7 +38,7 @@ class BubbleBase(BoxLayout):
             self.rect_instruction = RoundedRectangle(
                 pos=self.pos,
                 size=self.size,
-                radius=[dp(12), dp(12), dp(2) if is_outgoing else dp(12), dp(12) if is_outgoing else dp(2)]
+                radius=[dp(14), dp(14), dp(2) if is_outgoing else dp(14), dp(14) if is_outgoing else dp(2)]
             )
         self.bind(pos=self._update_rect, size=self._update_rect)
 
@@ -52,7 +52,6 @@ class TextMessageBubble(BubbleBase):
     def __init__(self, text: str, timestamp_str: str, is_outgoing: bool = True, **kwargs):
         super().__init__(is_outgoing=is_outgoing, **kwargs)
 
-        # Text label
         self.text_label = Label(
             text=text,
             color=COLOR_TEXT_PRIMARY,
@@ -64,7 +63,6 @@ class TextMessageBubble(BubbleBase):
         self.text_label.bind(texture_size=self._update_label_size)
         self.add_widget(self.text_label)
 
-        # Timestamp & Status
         time_text = f"{timestamp_str}  Read" if is_outgoing else timestamp_str
         self.time_label = Label(
             text=time_text,
@@ -103,7 +101,7 @@ class VoiceNoteBubble(BubbleBase):
             font_size="13sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(48), dp(36)),
+            size=(dp(52), dp(36)),
             background_color=COLOR_TEAL_LIGHT,
             color=(1, 1, 1, 1)
         )
@@ -137,7 +135,6 @@ class VoiceNoteBubble(BubbleBase):
 
         self.add_widget(row)
 
-        # Timestamp
         self.time_label = Label(
             text=f"{timestamp_str}  Read" if is_outgoing else timestamp_str,
             color=COLOR_TEXT_MUTED,
@@ -158,13 +155,55 @@ class VoiceNoteBubble(BubbleBase):
         self.play_btn.text = "Pause" if playing else "Play"
 
 
+class ImageMessageBubble(BubbleBase):
+    """WhatsApp-style photo message bubble with inline image preview."""
+    def __init__(self, filepath: str, filename: str, timestamp_str: str, is_outgoing: bool = True, on_open_image=None, **kwargs):
+        super().__init__(is_outgoing=is_outgoing, **kwargs)
+        self.filepath = filepath
+        self.on_open_image = on_open_image
+        self.height = dp(210)
+
+        # Inline image view
+        self.img_view = AsyncImage(
+            source=filepath if os.path.exists(filepath) else "",
+            size_hint_y=None,
+            height=dp(150),
+            allow_stretch=True,
+            keep_ratio=True
+        )
+        self.add_widget(self.img_view)
+
+        # Bottom info row
+        info_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(24))
+        name_lbl = Label(
+            text=filename[:20] + ("..." if len(filename) > 20 else ""),
+            color=COLOR_TEXT_PRIMARY,
+            font_size="12sp",
+            halign="left"
+        )
+        name_lbl.bind(size=lambda *_: setattr(name_lbl, 'text_size', name_lbl.size))
+        info_row.add_widget(name_lbl)
+
+        time_text = f"{timestamp_str}  Read" if is_outgoing else timestamp_str
+        time_lbl = Label(
+            text=time_text,
+            color=COLOR_TEXT_MUTED,
+            font_size="11sp",
+            halign="right"
+        )
+        time_lbl.bind(size=lambda *_: setattr(time_lbl, 'text_size', time_lbl.size))
+        info_row.add_widget(time_lbl)
+
+        self.add_widget(info_row)
+
+
 class VideoMessageBubble(BubbleBase):
-    """WhatsApp-style video message bubble with filename, progress bar, and play action."""
+    """WhatsApp-style video message bubble with filename, speed, progress bar, and play action."""
     def __init__(self, filepath: str, filename: str, file_size: int, timestamp_str: str, is_outgoing: bool = True, on_open_video=None, **kwargs):
         super().__init__(is_outgoing=is_outgoing, **kwargs)
         self.filepath = filepath
         self.on_open_video = on_open_video
-        self.height = dp(115)
+        self.height = dp(125)
 
         # Video Header Box
         header_box = BoxLayout(orientation="horizontal", spacing=dp(8), size_hint_y=None, height=dp(36))
@@ -189,16 +228,16 @@ class VideoMessageBubble(BubbleBase):
         name_label.bind(size=lambda *_: setattr(name_label, 'text_size', name_label.size))
 
         size_kb = round(file_size / 1024, 1)
-        size_label = Label(
+        self.size_label = Label(
             text=f"{size_kb} KB",
             color=COLOR_TEXT_MUTED,
             font_size="11sp",
             halign="left"
         )
-        size_label.bind(size=lambda *_: setattr(size_label, 'text_size', size_label.size))
+        self.size_label.bind(size=lambda *_: setattr(self.size_label, 'text_size', self.size_label.size))
 
         meta_box.add_widget(name_label)
-        meta_box.add_widget(size_label)
+        meta_box.add_widget(self.size_label)
         header_box.add_widget(meta_box)
         self.add_widget(header_box)
 
@@ -213,7 +252,8 @@ class VideoMessageBubble(BubbleBase):
             height=dp(28),
             background_color=COLOR_TEAL_LIGHT,
             color=(1, 1, 1, 1),
-            font_size="12sp"
+            font_size="12sp",
+            bold=True
         )
         self.action_btn.bind(on_release=lambda *_: self.on_open_video(self.filepath) if self.on_open_video else None)
         self.add_widget(self.action_btn)
@@ -230,10 +270,11 @@ class VideoMessageBubble(BubbleBase):
         self.time_label.bind(size=lambda *_: setattr(self.time_label, 'text_size', self.time_label.size))
         self.add_widget(self.time_label)
 
-    def set_progress(self, percent: float):
+    def set_progress(self, percent: float, speed_kbps: float = 0.0):
         self.progress_bar.value = percent
         if percent < 100:
-            self.action_btn.text = f"Transferring... {int(percent)}%"
+            speed_txt = f" ({int(speed_kbps)} KB/s)" if speed_kbps > 0 else ""
+            self.action_btn.text = f"Transferring {int(percent)}%{speed_txt}"
             self.action_btn.disabled = True
         else:
             self.action_btn.text = "Play Video"

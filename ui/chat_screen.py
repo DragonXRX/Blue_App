@@ -1,9 +1,9 @@
 """
-Main Chat Screen:
-Assembles WhatsApp-themed top bar, chat history list, and bottom input controls.
-Integrates with Transport, Protocol, and MediaManager.
-Uses clean standard typography (no emoji glyphs) to ensure flawless rendering across all platforms.
-Fully compatible with Android storage and Intent system.
+Main Chat Screen (Version 1.1.0):
+- WhatsApp-themed top bar with Real-time Typing indicator & Heartbeat.
+- Instant Text, Voice Notes with waveforms, Videos with transfer speed, and Photos.
+- Floating Send/Mic actions and rounded input styling.
+- Clear Chat & Disconnect management.
 """
 import os
 import time
@@ -25,12 +25,12 @@ from kivy.utils import platform
 from config import (
     COLOR_TEAL_DARK, COLOR_TEAL_LIGHT, COLOR_GREEN_ACCENT,
     COLOR_CHAT_BG, COLOR_DISCONNECTED, CHUNK_SIZE,
-    PKT_TEXT, PKT_AUDIO, PKT_VIDEO, PKT_PROGRESS,
-    get_media_dir, get_default_picker_dir
+    PKT_TEXT, PKT_AUDIO, PKT_VIDEO, PKT_IMAGE, PKT_PROGRESS,
+    PKT_TYPING, PKT_PING, get_media_dir, get_default_picker_dir
 )
 from core.protocol import Packet, PacketParser, TransferManager
 from core.media_manager import MediaManager
-from ui.components import TextMessageBubble, VoiceNoteBubble, VideoMessageBubble
+from ui.components import TextMessageBubble, VoiceNoteBubble, VideoMessageBubble, ImageMessageBubble
 
 class ChatScreen(Screen):
     def __init__(self, transport, **kwargs):
@@ -42,6 +42,10 @@ class ChatScreen(Screen):
         
         self.active_video_bubbles = {}  # file_id -> VideoMessageBubble
         self.current_playing_bubble = None
+        self._last_typed_time = 0.0
+        self._is_peer_typing = False
+        self._peer_typing_clear_event = None
+        self._heartbeat_event = None
 
         # Build UI
         self._build_ui()
@@ -54,9 +58,9 @@ class ChatScreen(Screen):
         self.top_bar = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(56),
+            height=dp(58),
             padding=[dp(8), dp(4), dp(8), dp(4)],
-            spacing=dp(8)
+            spacing=dp(6)
         )
         with self.top_bar.canvas.before:
             Color(*COLOR_TEAL_DARK)
@@ -67,16 +71,16 @@ class ChatScreen(Screen):
         # Avatar / Badge
         avatar_lbl = Label(
             text="[P2P]",
-            font_size="14sp",
+            font_size="13sp",
             bold=True,
             size_hint=(None, None),
-            size=(dp(46), dp(38)),
+            size=(dp(42), dp(38)),
             color=(0.9, 1.0, 0.9, 1.0)
         )
         self.top_bar.add_widget(avatar_lbl)
 
-        # Contact Name & Status
-        contact_box = BoxLayout(orientation="vertical")
+        # Contact Name & Status (with typing indicator)
+        contact_box = BoxLayout(orientation="vertical", spacing=dp(1))
         self.name_lbl = Label(
             text="BlueChat (Disconnected)",
             font_size="15sp",
@@ -104,10 +108,10 @@ class ChatScreen(Screen):
         self.server_btn = Button(
             text="Listen",
             size_hint=(None, None),
-            size=(dp(70), dp(36)),
+            size=(dp(64), dp(36)),
             background_color=COLOR_TEAL_LIGHT,
             color=(1, 1, 1, 1),
-            font_size="12sp",
+            font_size="11sp",
             bold=True
         )
         self.server_btn.bind(on_release=self._start_server_mode)
@@ -116,14 +120,25 @@ class ChatScreen(Screen):
         self.pair_btn = Button(
             text="Devices",
             size_hint=(None, None),
-            size=(dp(75), dp(36)),
+            size=(dp(68), dp(36)),
             background_color=COLOR_TEAL_LIGHT,
             color=(1, 1, 1, 1),
-            font_size="12sp",
+            font_size="11sp",
             bold=True
         )
         self.pair_btn.bind(on_release=self._show_paired_devices_dialog)
         self.top_bar.add_widget(self.pair_btn)
+
+        self.clear_btn = Button(
+            text="Clear",
+            size_hint=(None, None),
+            size=(dp(54), dp(36)),
+            background_color=(0.2, 0.45, 0.4, 1.0),
+            color=(0.9, 0.9, 0.9, 1.0),
+            font_size="11sp"
+        )
+        self.clear_btn.bind(on_release=self._clear_chat)
+        self.top_bar.add_widget(self.clear_btn)
 
         root.add_widget(self.top_bar)
 
@@ -161,7 +176,7 @@ class ChatScreen(Screen):
         self.input_bar.bind(pos=lambda *_: setattr(self.input_bar_rect, 'pos', self.input_bar.pos),
                             size=lambda *_: setattr(self.input_bar_rect, 'size', self.input_bar.size))
 
-        # Media / Video Attachment Button
+        # Media / Photo / Video Attachment Button
         self.attach_btn = Button(
             text="+",
             font_size="22sp",
@@ -183,6 +198,7 @@ class ChatScreen(Screen):
             height=dp(40),
             padding=[dp(10), dp(8), dp(10), dp(8)]
         )
+        self.text_input.bind(text=self._on_input_text_change)
         self.text_input.bind(on_text_validate=lambda *_: self._send_text_message())
         self.input_bar.add_widget(self.text_input)
 
@@ -223,9 +239,20 @@ class ChatScreen(Screen):
 
     def _on_connected(self, peer_name):
         Clock.schedule_once(lambda dt: self._update_connection_ui(True, peer_name))
+        # Start keepalive heartbeat every 10 seconds
+        if not self._heartbeat_event:
+            self._heartbeat_event = Clock.schedule_interval(self._send_heartbeat, 10.0)
 
     def _on_disconnected(self):
         Clock.schedule_once(lambda dt: self._update_connection_ui(False, ""))
+        if self._heartbeat_event:
+            self._heartbeat_event.cancel()
+            self._heartbeat_event = None
+
+    def _send_heartbeat(self, dt):
+        if self.transport.is_connected:
+            ping_pkt = Packet.create_ping_packet()
+            self.transport.send_data(ping_pkt.pack())
 
     def _update_connection_ui(self, is_connected: bool, peer_name: str):
         if is_connected:
@@ -239,6 +266,19 @@ class ChatScreen(Screen):
 
     def _on_transport_error(self, err_msg: str):
         Clock.schedule_once(lambda dt: setattr(self.status_lbl, 'text', f"Error: {err_msg[:30]}"))
+
+    def _on_input_text_change(self, instance, value):
+        now = time.time()
+        if now - self._last_typed_time > 1.5 and self.transport.is_connected:
+            self._last_typed_time = now
+            threading.Thread(target=self._send_typing_signal, args=(bool(value),), daemon=True).start()
+
+    def _send_typing_signal(self, is_typing: bool):
+        try:
+            pkt = Packet.create_typing_packet(is_typing)
+            self.transport.send_data(pkt.pack())
+        except Exception:
+            pass
 
     def _on_raw_data_received(self, raw_bytes: bytes):
         self.parser.feed(raw_bytes)
@@ -259,7 +299,22 @@ class ChatScreen(Screen):
             except Exception as e:
                 print(f"[ChatScreen] Error parsing text packet: {e}")
 
-        elif pkt.pkt_type in (PKT_AUDIO, PKT_VIDEO):
+        elif pkt.pkt_type == PKT_TYPING:
+            try:
+                data = json.loads(pkt.payload.decode("utf-8"))
+                if data.get("is_typing"):
+                    Clock.schedule_once(lambda dt: self._set_peer_typing(True))
+                    if self._peer_typing_clear_event:
+                        self._peer_typing_clear_event.cancel()
+                    self._peer_typing_clear_event = Clock.schedule_once(lambda dt: self._set_peer_typing(False), 3.0)
+            except Exception:
+                pass
+
+        elif pkt.pkt_type == PKT_PING:
+            # Heartbeat packet received, connection is healthy
+            pass
+
+        elif pkt.pkt_type in (PKT_AUDIO, PKT_VIDEO, PKT_IMAGE):
             try:
                 meta = json.loads(pkt.payload.decode("utf-8"))
                 file_id = meta.get("file_id")
@@ -283,28 +338,43 @@ class ChatScreen(Screen):
 
         elif pkt.pkt_type == PKT_PROGRESS:
             import struct
-            header_size = struct.calcsize(">12sII")
+            header_size = struct.calcsize(">12sIII")
             if len(pkt.payload) >= header_size:
-                file_id_raw, chunk_idx, total_chunks = struct.unpack_from(">12sII", pkt.payload, 0)
+                file_id_raw, chunk_idx, total_chunks, chunk_crc = struct.unpack_from(">12sIII", pkt.payload, 0)
                 file_id = file_id_raw.decode("utf-8", errors="ignore").strip()
                 chunk_data = pkt.payload[header_size:]
 
-                finished_info, progress, is_complete = self.transfer_manager.write_chunk(file_id, chunk_data)
+                finished_info, progress, speed_kb, is_complete = self.transfer_manager.write_chunk(file_id, chunk_data, chunk_crc)
 
-                # Update video bubble progress if present
                 if file_id in self.active_video_bubbles:
                     bubble = self.active_video_bubbles[file_id]
-                    Clock.schedule_once(lambda dt, b=bubble, p=progress*100: b.set_progress(p))
+                    Clock.schedule_once(lambda dt, b=bubble, p=progress*100, s=speed_kb: b.set_progress(p, s))
 
                 if is_complete and finished_info:
+                    timestamp_str = time.strftime("%H:%M")
                     if finished_info["type"] == PKT_AUDIO:
-                        timestamp_str = time.strftime("%H:%M")
                         Clock.schedule_once(lambda dt: self._add_voice_bubble(
                             finished_info["filepath"],
                             finished_info["duration"],
                             timestamp_str,
                             is_outgoing=False
                         ))
+                    elif finished_info["type"] == PKT_IMAGE:
+                        Clock.schedule_once(lambda dt: self._add_image_bubble(
+                            finished_info["filepath"],
+                            finished_info["filename"],
+                            timestamp_str,
+                            is_outgoing=False
+                        ))
+
+    def _set_peer_typing(self, is_typing: bool):
+        if self.transport.is_connected:
+            if is_typing:
+                self.status_lbl.text = "typing..."
+                self.status_lbl.color = (0.2, 0.85, 0.4, 1.0)
+            else:
+                self.status_lbl.text = "[Online]"
+                self.status_lbl.color = COLOR_GREEN_ACCENT
 
     def _send_text_message(self):
         text = self.text_input.text.strip()
@@ -330,6 +400,17 @@ class ChatScreen(Screen):
             timestamp_str=timestamp_str,
             is_outgoing=is_outgoing,
             on_play=self._handle_voice_play
+        )
+        self.messages_box.add_widget(bubble)
+        self._scroll_to_bottom()
+
+    def _add_image_bubble(self, filepath: str, filename: str, timestamp_str: str, is_outgoing: bool):
+        bubble = ImageMessageBubble(
+            filepath=filepath,
+            filename=filename,
+            timestamp_str=timestamp_str,
+            is_outgoing=is_outgoing,
+            on_open_image=self._open_image_file
         )
         self.messages_box.add_widget(bubble)
         self._scroll_to_bottom()
@@ -362,8 +443,13 @@ class ChatScreen(Screen):
             self.current_playing_bubble = bubble
             self.media_manager.play_audio(bubble.filepath)
 
+    def _open_image_file(self, filepath: str):
+        self._open_media_native(filepath, "image/*")
+
     def _open_video_file(self, filepath: str):
-        """Attempts to open or preview the received video file across platforms."""
+        self._open_media_native(filepath, "video/*")
+
+    def _open_media_native(self, filepath: str, mime_type: str):
         if not os.path.exists(filepath):
             return
         
@@ -379,7 +465,7 @@ class ChatScreen(Screen):
                 file_obj = File(filepath)
                 intent = Intent(Intent.ACTION_VIEW)
                 uri = Uri.fromFile(file_obj)
-                intent.setDataAndType(uri, "video/*")
+                intent.setDataAndType(uri, mime_type)
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 
@@ -387,9 +473,9 @@ class ChatScreen(Screen):
                 currentActivity.startActivity(intent)
                 return
             except Exception as e:
-                print(f"[ChatScreen] Android video intent error: {e}")
+                print(f"[ChatScreen] Android intent error: {e}")
 
-        # 2. Desktop Windows / Mac / Linux fallback
+        # 2. Desktop fallback
         try:
             if os.name == 'nt':
                 os.startfile(filepath)
@@ -397,17 +483,15 @@ class ChatScreen(Screen):
                 import subprocess
                 subprocess.Popen(['xdg-open', filepath])
         except Exception as e:
-            print(f"[ChatScreen] Cannot open video: {e}")
+            print(f"[ChatScreen] Cannot open media: {e}")
 
     def _toggle_voice_record(self, *args):
         if not self.media_manager.is_recording:
-            # Start recording
             self.media_manager.start_voice_recording()
             self.mic_btn.text = "STOP"
             self.mic_btn.background_color = (0.9, 0.2, 0.2, 1.0)
             self.status_lbl.text = "[Recording Voice Note...]"
         else:
-            # Stop recording and send
             filepath, duration = self.media_manager.stop_voice_recording()
             self.mic_btn.text = "Mic"
             self.mic_btn.background_color = COLOR_TEAL_LIGHT
@@ -419,14 +503,17 @@ class ChatScreen(Screen):
                 threading.Thread(target=self._send_media_file, args=(filepath, PKT_AUDIO, duration), daemon=True).start()
 
     def _open_file_picker(self, *args):
-        """Displays a file chooser popup to select a video/media file."""
+        """Displays a file chooser popup to select a video/photo file."""
         content = BoxLayout(orientation="vertical")
         start_dir = get_default_picker_dir()
-        file_chooser = FileChooserListView(path=start_dir)
+        file_chooser = FileChooserListView(
+            path=start_dir,
+            filters=["*.mp4", "*.mkv", "*.avi", "*.3gp", "*.jpg", "*.jpeg", "*.png"]
+        )
         content.add_widget(file_chooser)
 
         btn_row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))
-        select_btn = Button(text="Send File", background_color=COLOR_GREEN_ACCENT, bold=True)
+        select_btn = Button(text="Send Media", background_color=COLOR_GREEN_ACCENT, bold=True)
         cancel_btn = Button(text="Cancel", background_color=(0.7, 0.7, 0.7, 1.0))
 
         btn_row.add_widget(cancel_btn)
@@ -439,11 +526,33 @@ class ChatScreen(Screen):
             if file_chooser.selection:
                 selected_file = file_chooser.selection[0]
                 popup.dismiss()
-                self._send_video_file(selected_file)
+                ext = os.path.splitext(selected_file)[1].lower()
+                if ext in [".jpg", ".jpeg", ".png"]:
+                    self._send_image_file(selected_file)
+                else:
+                    self._send_video_file(selected_file)
 
         select_btn.bind(on_release=_on_select)
         cancel_btn.bind(on_release=popup.dismiss)
         popup.open()
+
+    def _send_image_file(self, filepath: str):
+        if not os.path.exists(filepath):
+            return
+        filename = os.path.basename(filepath)
+        timestamp_str = time.strftime("%H:%M")
+
+        bubble = ImageMessageBubble(
+            filepath=filepath,
+            filename=filename,
+            timestamp_str=timestamp_str,
+            is_outgoing=True,
+            on_open_image=self._open_image_file
+        )
+        self.messages_box.add_widget(bubble)
+        self._scroll_to_bottom()
+
+        threading.Thread(target=self._send_media_file, args=(filepath, PKT_IMAGE, 0.0, None), daemon=True).start()
 
     def _send_video_file(self, filepath: str):
         if not os.path.exists(filepath):
@@ -481,11 +590,12 @@ class ChatScreen(Screen):
         )
         self.transport.send_data(meta_pkt.pack())
 
-        # 2. Send Chunks
+        # 2. Send Chunks with CRC32
         total_chunks = math.ceil(file_size / CHUNK_SIZE) if file_size > 0 else 1
         with open(filepath, "rb") as f:
             chunk_idx = 0
             sent_bytes = 0
+            start_t = time.time()
             while True:
                 chunk_data = f.read(CHUNK_SIZE)
                 if not chunk_data:
@@ -500,13 +610,19 @@ class ChatScreen(Screen):
                 sent_bytes += len(chunk_data)
                 chunk_idx += 1
 
-                # Update outgoing progress bar
+                # Update outgoing progress and transfer speed
                 if bubble_widget and file_size > 0:
                     percent = (sent_bytes / file_size) * 100
-                    Clock.schedule_once(lambda dt, p=percent: bubble_widget.set_progress(p))
+                    elapsed = max(0.01, time.time() - start_t)
+                    speed_kbps = (sent_bytes / 1024.0) / elapsed
+                    Clock.schedule_once(lambda dt, p=percent, s=speed_kbps: bubble_widget.set_progress(p, s))
 
-                # Slight throttle to avoid overwhelming Bluetooth RFCOMM buffer
-                time.sleep(0.01)
+                # Safe pacing for RFCOMM buffers
+                time.sleep(0.008)
+
+    def _clear_chat(self, *args):
+        self.messages_box.clear_widgets()
+        self.active_video_bubbles.clear()
 
     def _show_paired_devices_dialog(self, *args):
         devices = self.transport.get_paired_devices()
