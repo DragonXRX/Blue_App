@@ -1,7 +1,9 @@
 """
 Configuration and constants for BlueChat (WhatsApp-style Bluetooth Messenger).
+Cross-platform safe for Android and Desktop.
 """
 import os
+import sys
 
 # Application Info
 APP_NAME = "BlueChat"
@@ -41,8 +43,51 @@ PKT_ACK = 0x06
 DEFAULT_SIM_PORT_SERVER = 8888
 DEFAULT_SIM_PORT_CLIENT = 8889
 
-# Storage directories
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".bluechat_cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
-MEDIA_DIR = os.path.join(CACHE_DIR, "media")
-os.makedirs(MEDIA_DIR, exist_ok=True)
+def get_base_dir() -> str:
+    """Safely retrieves a writable storage directory across Android and Desktop."""
+    try:
+        from kivy.utils import platform
+        if platform == "android":
+            # On Android, use the app's dedicated internal storage to avoid permission errors
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                mActivity = PythonActivity.mActivity
+                if mActivity:
+                    return str(mActivity.getFilesDir().getAbsolutePath())
+            except Exception:
+                pass
+            return "/data/data/org.bluechat.app/files"
+    except Exception:
+        pass
+    
+    # Desktop fallback
+    home = os.path.expanduser("~")
+    # Verify home is writable
+    if not home or not os.path.isdir(home) or home == "/":
+        home = os.getcwd()
+    return os.path.join(home, ".bluechat_cache")
+
+def get_media_dir() -> str:
+    """Returns the media storage directory, creating it if needed."""
+    base = get_base_dir()
+    media_dir = os.path.join(base, "media")
+    try:
+        os.makedirs(media_dir, exist_ok=True)
+    except Exception as e:
+        print(f"[Config] Error creating media dir {media_dir}: {e}")
+        media_dir = os.path.join(os.getcwd(), "media")
+        os.makedirs(media_dir, exist_ok=True)
+    return media_dir
+
+def get_default_picker_dir() -> str:
+    """Returns a valid starting directory for the file chooser."""
+    try:
+        from kivy.utils import platform
+        if platform == "android":
+            for candidate in ["/sdcard/Download", "/sdcard/Movies", "/sdcard/DCIM", "/storage/emulated/0", "/sdcard"]:
+                if os.path.exists(candidate):
+                    return candidate
+    except Exception:
+        pass
+    return os.path.expanduser("~")

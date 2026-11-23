@@ -14,35 +14,58 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.utils import platform
+from kivy.clock import Clock
 
 from config import APP_NAME, DEFAULT_SIM_PORT_SERVER
-from core.desktop_simulator import DesktopSimulatorTransport
 from ui.chat_screen import ChatScreen
 
 # Check if running on Android
 IS_ANDROID = (platform == "android")
 
 def request_android_permissions():
-    """Requests Android runtime permissions for Bluetooth, Mic, and Storage."""
-    if IS_ANDROID:
-        try:
-            from android.permissions import request_permissions, Permission
-            request_permissions([
-                Permission.BLUETOOTH,
-                Permission.BLUETOOTH_ADMIN,
-                Permission.BLUETOOTH_CONNECT,
-                Permission.BLUETOOTH_SCAN,
-                Permission.RECORD_AUDIO,
-                Permission.READ_EXTERNAL_STORAGE,
-                Permission.WRITE_EXTERNAL_STORAGE
-            ])
-        except Exception as e:
-            print(f"[BlueChat] Permission request failed or not supported: {e}")
+    """Safely requests Android runtime permissions across Android 6 to 14."""
+    if not IS_ANDROID:
+        return
+    try:
+        from android.permissions import request_permissions, Permission
+        perms_to_request = []
+
+        # Audio recording permission
+        if hasattr(Permission, 'RECORD_AUDIO'):
+            perms_to_request.append(Permission.RECORD_AUDIO)
+        else:
+            perms_to_request.append("android.permission.RECORD_AUDIO")
+
+        # Storage permissions
+        if hasattr(Permission, 'READ_EXTERNAL_STORAGE'):
+            perms_to_request.append(Permission.READ_EXTERNAL_STORAGE)
+        if hasattr(Permission, 'WRITE_EXTERNAL_STORAGE'):
+            perms_to_request.append(Permission.WRITE_EXTERNAL_STORAGE)
+
+        # Android 12+ (API 31+) Bluetooth runtime permissions
+        for b_perm in ['BLUETOOTH_CONNECT', 'BLUETOOTH_SCAN', 'BLUETOOTH_ADVERTISE']:
+            if hasattr(Permission, b_perm):
+                perms_to_request.append(getattr(Permission, b_perm))
+            else:
+                perms_to_request.append(f"android.permission.{b_perm}")
+
+        # Android 13+ (API 33+) Media permissions
+        for m_perm in ['READ_MEDIA_AUDIO', 'READ_MEDIA_VIDEO']:
+            if hasattr(Permission, m_perm):
+                perms_to_request.append(getattr(Permission, m_perm))
+            else:
+                perms_to_request.append(f"android.permission.{m_perm}")
+
+        request_permissions(perms_to_request)
+    except Exception as e:
+        print(f"[BlueChat] Permission request error: {e}")
+
 
 class BlueChatApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.title = APP_NAME
+        self.transport = None
 
     def build(self):
         # Set a mobile-friendly window aspect ratio for Desktop testing
@@ -52,11 +75,12 @@ class BlueChatApp(App):
         # Select transport based on platform
         if IS_ANDROID:
             print("[BlueChat] Running on Android: Initializing native Bluetooth driver...")
-            request_android_permissions()
             from core.android_bluetooth import AndroidBluetoothTransport
-            transport = AndroidBluetoothTransport()
+            self.transport = AndroidBluetoothTransport()
+            # Request permissions right after app is built
+            Clock.schedule_once(lambda dt: request_android_permissions(), 0.5)
         else:
-            # Parse custom port for desktop simulation testing (e.g. python main.py --port 8889)
+            from core.desktop_simulator import DesktopSimulatorTransport
             sim_port = DEFAULT_SIM_PORT_SERVER
             if "--port" in sys.argv:
                 try:
@@ -65,10 +89,17 @@ class BlueChatApp(App):
                 except Exception:
                     pass
             print(f"[BlueChat] Running on Desktop: Initializing Simulator Transport on port {sim_port}...")
-            transport = DesktopSimulatorTransport(port=sim_port)
+            self.transport = DesktopSimulatorTransport(port=sim_port)
 
-        # Return Chat Screen
-        return ChatScreen(transport=transport)
+        return ChatScreen(transport=self.transport)
+
+    def on_pause(self):
+        # Return True so the app remains active in background when Bluetooth is connected
+        return True
+
+    def on_resume(self):
+        pass
+
 
 if __name__ == "__main__":
     BlueChatApp().run()

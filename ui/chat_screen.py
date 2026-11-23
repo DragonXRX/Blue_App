@@ -3,6 +3,7 @@ Main Chat Screen:
 Assembles WhatsApp-themed top bar, chat history list, and bottom input controls.
 Integrates with Transport, Protocol, and MediaManager.
 Uses clean standard typography (no emoji glyphs) to ensure flawless rendering across all platforms.
+Fully compatible with Android storage and Intent system.
 """
 import os
 import time
@@ -19,11 +20,13 @@ from kivy.uix.filechooser import FileChooserListView
 from kivy.clock import Clock
 from kivy.graphics import Color, Rectangle, RoundedRectangle
 from kivy.metrics import dp
+from kivy.utils import platform
 
 from config import (
     COLOR_TEAL_DARK, COLOR_TEAL_LIGHT, COLOR_GREEN_ACCENT,
     COLOR_CHAT_BG, COLOR_DISCONNECTED, CHUNK_SIZE,
-    PKT_TEXT, PKT_AUDIO, PKT_VIDEO, PKT_PROGRESS
+    PKT_TEXT, PKT_AUDIO, PKT_VIDEO, PKT_PROGRESS,
+    get_media_dir, get_default_picker_dir
 )
 from core.protocol import Packet, PacketParser, TransferManager
 from core.media_manager import MediaManager
@@ -35,7 +38,7 @@ class ChatScreen(Screen):
         self.transport = transport
         self.parser = PacketParser()
         self.media_manager = MediaManager()
-        self.transfer_manager = TransferManager(save_dir=os.path.join(os.path.expanduser("~"), ".bluechat_cache", "media"))
+        self.transfer_manager = TransferManager(save_dir=get_media_dir())
         
         self.active_video_bubbles = {}  # file_id -> VideoMessageBubble
         self.current_playing_bubble = None
@@ -360,9 +363,33 @@ class ChatScreen(Screen):
             self.media_manager.play_audio(bubble.filepath)
 
     def _open_video_file(self, filepath: str):
-        """Attempts to open or preview the received video file."""
+        """Attempts to open or preview the received video file across platforms."""
         if not os.path.exists(filepath):
             return
+        
+        # 1. Android Native Intent viewer
+        if platform == "android":
+            try:
+                from jnius import autoclass, cast
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                Intent = autoclass("android.content.Intent")
+                Uri = autoclass("android.net.Uri")
+                File = autoclass("java.io.File")
+                
+                file_obj = File(filepath)
+                intent = Intent(Intent.ACTION_VIEW)
+                uri = Uri.fromFile(file_obj)
+                intent.setDataAndType(uri, "video/*")
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                
+                currentActivity = cast("android.app.Activity", PythonActivity.mActivity)
+                currentActivity.startActivity(intent)
+                return
+            except Exception as e:
+                print(f"[ChatScreen] Android video intent error: {e}")
+
+        # 2. Desktop Windows / Mac / Linux fallback
         try:
             if os.name == 'nt':
                 os.startfile(filepath)
@@ -394,7 +421,8 @@ class ChatScreen(Screen):
     def _open_file_picker(self, *args):
         """Displays a file chooser popup to select a video/media file."""
         content = BoxLayout(orientation="vertical")
-        file_chooser = FileChooserListView(path=os.path.expanduser("~"))
+        start_dir = get_default_picker_dir()
+        file_chooser = FileChooserListView(path=start_dir)
         content.add_widget(file_chooser)
 
         btn_row = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(8))

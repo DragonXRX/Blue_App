@@ -1,6 +1,7 @@
 """
 Native Android Bluetooth RFCOMM Transport using Pyjnius.
 Interacts with Android BluetoothAdapter, BluetoothDevice, BluetoothServerSocket, and BluetoothSocket.
+Hardened with try/except blocks around all Android API calls to prevent SecurityException crashes.
 """
 import threading
 from typing import List, Dict, Optional, Callable
@@ -27,43 +28,75 @@ class AndroidBluetoothTransport(BaseTransport):
         self._uuid = None
 
         if HAS_PYJNIUS:
-            UUID = autoclass("java.util.UUID")
+            try:
+                UUID = autoclass("java.util.UUID")
+                self._uuid = UUID.fromString(SPP_UUID)
+                self._init_adapter()
+            except Exception as e:
+                print(f"[AndroidBluetooth] Init error: {e}")
+
+    def _init_adapter(self):
+        """Safely retrieves the default BluetoothAdapter."""
+        if not HAS_PYJNIUS:
+            return None
+        if self._adapter is not None:
+            return self._adapter
+        try:
             BluetoothAdapter = autoclass("android.bluetooth.BluetoothAdapter")
-            self._uuid = UUID.fromString(SPP_UUID)
             self._adapter = BluetoothAdapter.getDefaultAdapter()
+            return self._adapter
+        except Exception as e:
+            print(f"[AndroidBluetooth] Cannot get BluetoothAdapter: {e}")
+            return None
 
     def is_bluetooth_enabled(self) -> bool:
-        if not HAS_PYJNIUS or not self._adapter:
+        adapter = self._init_adapter()
+        if not adapter:
             return False
-        return bool(self._adapter.isEnabled())
+        try:
+            return bool(adapter.isEnabled())
+        except Exception as e:
+            print(f"[AndroidBluetooth] isEnabled error (possibly missing permission): {e}")
+            return False
 
     def get_paired_devices(self) -> List[Dict[str, str]]:
         """Returns list of bonded (paired) Bluetooth devices."""
         devices = []
-        if not HAS_PYJNIUS or not self._adapter:
+        adapter = self._init_adapter()
+        if not adapter:
             return devices
 
         try:
-            bonded_devices = self._adapter.getBondedDevices().toArray()
-            for dev in bonded_devices:
-                name = dev.getName() or "Unknown Device"
-                address = dev.getAddress()
-                devices.append({"name": str(name), "address": str(address)})
+            bonded = adapter.getBondedDevices()
+            if bonded is not None:
+                bonded_devices = bonded.toArray()
+                for dev in bonded_devices:
+                    try:
+                        name = str(dev.getName() or "Unknown Device")
+                        address = str(dev.getAddress() or "")
+                        devices.append({"name": name, "address": address})
+                    except Exception:
+                        pass
         except Exception as e:
+            print(f"[AndroidBluetooth] Error getting bonded devices: {e}")
             if self.on_error:
-                self.on_error(f"Failed to get paired devices: {e}")
+                self.on_error("Bluetooth permission needed to read paired devices.")
         return devices
 
     def start_server(self, callback: Optional[Callable[[bool, str], None]] = None):
         """Starts Bluetooth RFCOMM server listener on Android."""
-        if not HAS_PYJNIUS or not self._adapter:
+        adapter = self._init_adapter()
+        if not adapter:
+            msg = "Bluetooth hardware not detected or not available."
             if callback:
-                callback(False, "Pyjnius or BluetoothAdapter not available on this platform")
+                callback(False, msg)
+            if self.on_error:
+                self.on_error(msg)
             return
 
         def _listen():
             try:
-                self._server_socket = self._adapter.listenUsingRfcommWithServiceRecord(
+                self._server_socket = adapter.listenUsingRfcommWithServiceRecord(
                     SERVICE_NAME, self._uuid
                 )
                 self._running = True
@@ -77,8 +110,11 @@ class AndroidBluetoothTransport(BaseTransport):
                 self._out_stream = socket.getOutputStream()
                 self.is_connected = True
 
-                device = socket.getRemoteDevice()
-                self.peer_name = str(device.getName() or device.getAddress())
+                try:
+                    device = socket.getRemoteDevice()
+                    self.peer_name = str(device.getName() or device.getAddress())
+                except Exception:
+                    self.peer_name = "Remote Phone"
 
                 if self.on_connected:
                     self.on_connected(self.peer_name)
@@ -86,26 +122,37 @@ class AndroidBluetoothTransport(BaseTransport):
                 self._start_reader()
             except Exception as e:
                 self._running = False
+                err_text = str(e)
+                print(f"[AndroidBluetooth] Server listen error: {err_text}")
+                if "SecurityException" in err_text:
+                    err_text = "Permission denied: Grant Bluetooth permissions in phone settings."
                 if callback:
-                    callback(False, str(e))
+                    callback(False, err_text)
                 if self.on_error:
-                    self.on_error(f"Bluetooth Server Error: {e}")
+                    self.on_error(err_text)
 
         threading.Thread(target=_listen, daemon=True).start()
 
     def connect_to_device(self, device_address_or_info: str, callback: Optional[Callable[[bool, str], None]] = None):
         """Connects to a remote Android Bluetooth device by MAC address."""
-        if not HAS_PYJNIUS or not self._adapter:
+        adapter = self._init_adapter()
+        if not adapter:
+            msg = "Bluetooth not available on this device."
             if callback:
-                callback(False, "Pyjnius or BluetoothAdapter not available on this platform")
+                callback(False, msg)
+            if self.on_error:
+                self.on_error(msg)
             return
 
         def _connect():
             try:
                 # Cancel discovery as it slows down connections
-                self._adapter.cancelDiscovery()
+                try:
+                    adapter.cancelDiscovery()
+                except Exception:
+                    pass
 
-                remote_device = self._adapter.getRemoteDevice(device_address_or_info)
+                remote_device = adapter.getRemoteDevice(device_address_or_info)
                 socket = remote_device.createRfcommSocketToServiceRecord(self._uuid)
                 
                 # Connect (blocking)
@@ -116,7 +163,10 @@ class AndroidBluetoothTransport(BaseTransport):
                 self._out_stream = socket.getOutputStream()
                 self.is_connected = True
                 self._running = True
-                self.peer_name = str(remote_device.getName() or device_address_or_info)
+                try:
+                    self.peer_name = str(remote_device.getName() or device_address_or_info)
+                except Exception:
+                    self.peer_name = str(device_address_or_info)
 
                 if callback:
                     callback(True, f"Connected to {self.peer_name}")
@@ -126,17 +176,20 @@ class AndroidBluetoothTransport(BaseTransport):
                 self._start_reader()
             except Exception as e:
                 self.is_connected = False
+                err_text = str(e)
+                print(f"[AndroidBluetooth] Connection error: {err_text}")
+                if "SecurityException" in err_text:
+                    err_text = "Permission denied: Grant Bluetooth Connect permission in settings."
                 if callback:
-                    callback(False, str(e))
+                    callback(False, err_text)
                 if self.on_error:
-                    self.on_error(f"Bluetooth Connection Failed: {e}")
+                    self.on_error(err_text)
 
         threading.Thread(target=_connect, daemon=True).start()
 
     def _start_reader(self):
         """Continuously reads bytes from Bluetooth InputStream."""
         def _read_loop():
-            # Create a 4096 byte buffer
             byte_array = bytearray(4096)
             while self._running and self._in_stream:
                 try:
@@ -146,7 +199,6 @@ class AndroidBluetoothTransport(BaseTransport):
                         if self.on_packet_received:
                             self.on_packet_received(raw_data)
                     elif num_bytes == -1:
-                        # Stream closed
                         break
                 except Exception:
                     break
