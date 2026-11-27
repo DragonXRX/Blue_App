@@ -284,12 +284,17 @@ class ChatScreen(Screen):
 
     def _on_keyboard_height_change(self, window, height):
         target_h = max(0, height)
-        # Smoothly animate the spacer height matching the soft keyboard movement
+        # Prevent redundant animations if height hasn't changed
+        if abs(self.keyboard_height - target_h) < 2:
+            return
+        self.keyboard_height = target_h
+        
         Animation.stop_all(self.keyboard_spacer)
         anim = Animation(height=target_h, d=0.22, t='out_quad')
         anim.start(self.keyboard_spacer)
         if target_h > 0:
             Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.1)
+            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.25)
 
     def _setup_transport_callbacks(self):
         self.transport.on_connected = self._on_connected

@@ -137,9 +137,9 @@ class BlueChatApp(App):
         self.wakelock_mgr = WakeLockManager()
 
     def build(self):
-        # Configure Kivy Window to pan and animate cleanly with keyboard
-        Window.softinput_mode = "pan"
-        Window.keyboard_anim_args = {'d': 0.2, 't': 'in_out_quart'}
+        # Allow Kivy to control window layout natively;
+        # keyboard height spacer in ChatScreen handles smooth elevation without dual-shifting
+        Window.softinput_mode = ""
 
         if not IS_ANDROID:
             Window.size = (380, 680)
@@ -149,7 +149,6 @@ class BlueChatApp(App):
             print("[BlueChat] Running on Android: Initializing native Bluetooth driver...")
             from core.android_bluetooth import AndroidBluetoothTransport
             self.transport = AndroidBluetoothTransport()
-            Clock.schedule_once(lambda dt: configure_android_window(), 0.2)
             Clock.schedule_once(lambda dt: request_android_permissions(), 0.5)
         else:
             from core.desktop_simulator import DesktopSimulatorTransport
