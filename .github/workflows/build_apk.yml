@@ -1,6 +1,8 @@
 name: Build Android APK with Buildozer
 
 on:
+  push:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
