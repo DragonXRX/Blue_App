@@ -9,6 +9,7 @@ import time
 import math
 import threading
 from kivy.uix.screenmanager import Screen
+from kivy.uix.widget import Widget
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
@@ -21,6 +22,7 @@ from kivy.uix.filechooser import FileChooserListView
 from kivy.clock import Clock
 from kivy.graphics import Color, Rectangle, RoundedRectangle, Ellipse
 from kivy.metrics import dp
+from kivy.core.window import Window
 from kivy.utils import platform
 
 from config import (
@@ -46,9 +48,11 @@ class ChatScreen(Screen):
         self._last_typed_time = 0.0
         self._peer_typing_clear_event = None
         self._heartbeat_event = None
+        self.keyboard_height = 0
 
         self._build_ui()
         self._setup_transport_callbacks()
+        self._setup_keyboard_listener()
 
     def _build_ui(self):
         root = BoxLayout(orientation="vertical")
@@ -267,7 +271,22 @@ class ChatScreen(Screen):
         self.input_bar.add_widget(self.send_btn)
 
         root.add_widget(self.input_bar)
+        
+        # Spacer widget at the bottom that dynamically expands to match keyboard height
+        self.keyboard_spacer = Widget(size_hint_y=None, height=0)
+        root.add_widget(self.keyboard_spacer)
+        
         self.add_widget(root)
+
+    def _setup_keyboard_listener(self):
+        Window.bind(on_keyboard_height=self._on_keyboard_height_change)
+
+    def _on_keyboard_height_change(self, window, height):
+        self.keyboard_height = max(0, height)
+        # Update spacer height so the input bar is elevated exactly above the keyboard
+        self.keyboard_spacer.height = self.keyboard_height
+        if self.keyboard_height > 0:
+            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.1)
 
     def _setup_transport_callbacks(self):
         self.transport.on_connected = self._on_connected

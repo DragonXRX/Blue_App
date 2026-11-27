@@ -117,8 +117,9 @@ class BlueChatApp(App):
         self.wakelock_mgr = WakeLockManager()
 
     def build(self):
-        # Configure smooth keyboard sliding so input bar is never obscured on mobile
-        Window.softinput_mode = "below_target"
+        # Configure softinput_mode to "pan" so Android pushes the view up,
+        # and bind to keyboard events for pixel-perfect dynamic padding
+        Window.softinput_mode = "pan"
         Window.keyboard_anim_args = {'d': 0.2, 't': 'in_out_quart'}
 
         if not IS_ANDROID:
