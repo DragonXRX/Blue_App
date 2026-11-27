@@ -1,4 +1,4 @@
-# 📱 BlueChat — Telegram-style Offline Bluetooth Messenger
+# 📱 BlueChat — Offline Bluetooth Messenger
 
 > **Language**: **English** | [Arabic Version (العربية)](README_AR.md)
 
