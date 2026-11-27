@@ -63,6 +63,26 @@ class WakeLockManager:
         self.wake_lock = None
 
 
+def configure_android_window():
+    """Forces Android Window to resize when the soft keyboard is displayed."""
+    if not IS_ANDROID:
+        return
+    try:
+        from jnius import autoclass
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        WindowManagerLayoutParams = autoclass("android.view.WindowManager$LayoutParams")
+        activity = PythonActivity.mActivity
+        if activity:
+            def _set_mode():
+                # SOFT_INPUT_ADJUST_RESIZE = 16 (0x10)
+                # SOFT_INPUT_STATE_ALWAYS_HIDDEN = 2
+                activity.getWindow().setSoftInputMode(0x10 | 2)
+                print("[BlueChat] Android Window softInputMode set to ADJUST_RESIZE successfully.")
+            activity.runOnUiThread(_set_mode)
+    except Exception as e:
+        print(f"[BlueChat] configure_android_window error: {e}")
+
+
 def request_android_permissions():
     """Safely requests Android runtime permissions across all Android versions."""
     if not IS_ANDROID:
@@ -117,8 +137,7 @@ class BlueChatApp(App):
         self.wakelock_mgr = WakeLockManager()
 
     def build(self):
-        # Configure softinput_mode to "pan" so Android pushes the view up,
-        # and bind to keyboard events for pixel-perfect dynamic padding
+        # Configure Kivy Window to pan and animate cleanly with keyboard
         Window.softinput_mode = "pan"
         Window.keyboard_anim_args = {'d': 0.2, 't': 'in_out_quart'}
 
@@ -130,6 +149,7 @@ class BlueChatApp(App):
             print("[BlueChat] Running on Android: Initializing native Bluetooth driver...")
             from core.android_bluetooth import AndroidBluetoothTransport
             self.transport = AndroidBluetoothTransport()
+            Clock.schedule_once(lambda dt: configure_android_window(), 0.2)
             Clock.schedule_once(lambda dt: request_android_permissions(), 0.5)
         else:
             from core.desktop_simulator import DesktopSimulatorTransport

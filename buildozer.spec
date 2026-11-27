@@ -40,6 +40,9 @@ android.archs = arm64-v8a
 # (bool) Indicate if the application should be fullscreen
 fullscreen = 0
 
+# (str) Android window soft input mode
+android.softinput_mode = resize
+
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
 
