@@ -274,6 +274,11 @@ class ChatScreen(Screen):
         self.transport.on_disconnected = self._on_disconnected
         self.transport.on_packet_received = self._on_raw_data_received
         self.transport.on_error = self._on_transport_error
+        if hasattr(self.transport, 'on_reconnecting_status'):
+            self.transport.on_reconnecting_status = self._on_reconnecting_status
+
+    def _on_reconnecting_status(self, status_msg: str):
+        Clock.schedule_once(lambda dt: setattr(self.status_lbl, 'text', status_msg))
 
     def _on_connected(self, peer_name):
         Clock.schedule_once(lambda dt: self._update_connection_ui(True, peer_name))
@@ -374,11 +379,19 @@ class ChatScreen(Screen):
 
         elif pkt.pkt_type == PKT_PROGRESS:
             import struct
-            header_size = struct.calcsize(">12sIII")
+            import zlib
+            header_size = struct.calcsize(">12sIIIB")
             if len(pkt.payload) >= header_size:
-                file_id_raw, chunk_idx, total_chunks, chunk_crc = struct.unpack_from(">12sIII", pkt.payload, 0)
+                file_id_raw, chunk_idx, total_chunks, chunk_crc, is_comp = struct.unpack_from(">12sIIIB", pkt.payload, 0)
                 file_id = file_id_raw.decode("utf-8", errors="ignore").strip()
                 chunk_data = pkt.payload[header_size:]
+
+                # Decompress chunk if it was compressed by sender
+                if is_comp == 1:
+                    try:
+                        chunk_data = zlib.decompress(chunk_data)
+                    except Exception as e:
+                        print(f"[ChatScreen] Error decompressing chunk: {e}")
 
                 finished_info, progress, speed_kb, is_complete = self.transfer_manager.write_chunk(file_id, chunk_data, chunk_crc)
 
@@ -662,31 +675,55 @@ class ChatScreen(Screen):
         dev_list_box.bind(minimum_height=dev_list_box.setter('height'))
 
         popup = Popup(
-            title="Paired Devices",
+            title="Bluetooth Devices",
             content=content,
-            size_hint=(0.85, 0.7)
+            size_hint=(0.85, 0.75)
         )
 
-        if not devices:
-            dev_list_box.add_widget(Label(text="No paired devices found.\nPlease pair your phone first in Bluetooth settings.", size_hint_y=None, height=dp(60)))
-        else:
-            for dev in devices:
-                btn = Button(
-                    text=f"{dev['name']}\n({dev['address']})",
-                    size_hint_y=None,
-                    height=dp(50),
-                    background_normal="",
-                    background_color=COLOR_TELEGRAM_BLUE
-                )
-                btn.bind(on_release=lambda *_, addr=dev['address']: self._connect_to_addr(addr, popup))
-                dev_list_box.add_widget(btn)
+        def _populate_devices(dev_list):
+            dev_list_box.clear_widgets()
+            if not dev_list:
+                dev_list_box.add_widget(Label(text="No devices found.\nMake sure Bluetooth is enabled.", size_hint_y=None, height=dp(60)))
+            else:
+                for dev in dev_list:
+                    btn = Button(
+                        text=f"{dev['name']}\n({dev['address']})",
+                        size_hint_y=None,
+                        height=dp(50),
+                        background_normal="",
+                        background_color=COLOR_TELEGRAM_BLUE
+                    )
+                    btn.bind(on_release=lambda *_, addr=dev['address']: self._connect_to_addr(addr, popup))
+                    dev_list_box.add_widget(btn)
 
+        _populate_devices(devices)
         scroll.add_widget(dev_list_box)
         content.add_widget(scroll)
 
-        close_btn = Button(text="Close", size_hint_y=None, height=dp(36))
+        action_row = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(8))
+        
+        # Scan Nearby button (for Android discovery)
+        scan_btn = Button(text="Scan Nearby", size_hint_x=0.6, background_normal="", background_color=COLOR_TELEGRAM_ACCENT, bold=True)
+        def _on_scan_clicked(*_):
+            if hasattr(self.transport, 'start_discovery'):
+                scan_btn.text = "Scanning..."
+                scan_btn.disabled = True
+                def _on_discovered(discovered_list):
+                    Clock.schedule_once(lambda dt: _populate_devices(discovered_list))
+                    Clock.schedule_once(lambda dt: setattr(scan_btn, 'text', 'Scan Nearby'))
+                    Clock.schedule_once(lambda dt: setattr(scan_btn, 'disabled', False))
+                self.transport.start_discovery(on_device_found=_on_discovered)
+            else:
+                _populate_devices(self.transport.get_paired_devices())
+
+        scan_btn.bind(on_release=_on_scan_clicked)
+        action_row.add_widget(scan_btn)
+
+        close_btn = Button(text="Close", size_hint_x=0.4, background_normal="", background_color=(0.5, 0.5, 0.5, 1.0))
         close_btn.bind(on_release=popup.dismiss)
-        content.add_widget(close_btn)
+        action_row.add_widget(close_btn)
+
+        content.add_widget(action_row)
         popup.open()
 
     def _connect_to_addr(self, address: str, popup: Popup):

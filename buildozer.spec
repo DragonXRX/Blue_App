@@ -22,8 +22,8 @@ version = 1.0.0
 # comma separated e.g. requirements = sqlite3,kivy
 requirements = python3,kivy,pyjnius,android
 
-# (list) Permissions required for Bluetooth, Audio Recording, and Media File Sharing
-android.permissions = BLUETOOTH,BLUETOOTH_ADMIN,BLUETOOTH_CONNECT,BLUETOOTH_SCAN,BLUETOOTH_ADVERTISE,RECORD_AUDIO,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,READ_MEDIA_AUDIO,READ_MEDIA_VIDEO
+# (list) Permissions required for Bluetooth, Audio Recording, Media File Sharing, WakeLock and Discovery
+android.permissions = BLUETOOTH,BLUETOOTH_ADMIN,BLUETOOTH_CONNECT,BLUETOOTH_SCAN,BLUETOOTH_ADVERTISE,RECORD_AUDIO,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,READ_MEDIA_AUDIO,READ_MEDIA_VIDEO,WAKE_LOCK,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION
 
 # (int) Target Android API, should be as high as possible.
 android.api = 33

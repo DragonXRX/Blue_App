@@ -1,8 +1,11 @@
 """
 Native Android Bluetooth RFCOMM Transport using Pyjnius.
-Interacts with Android BluetoothAdapter, BluetoothDevice, BluetoothServerSocket, and BluetoothSocket.
-Hardened with try/except blocks around all Android API calls to prevent SecurityException crashes.
+Enhanced with:
+- Dynamic Nearby Device Discovery (Scan for unbonded devices)
+- Automatic Reconnection when moving out/in of range
+- Robust exception handling to prevent SecurityException crashes
 """
+import time
 import threading
 from typing import List, Dict, Optional, Callable
 from core.transport import BaseTransport
@@ -26,6 +29,12 @@ class AndroidBluetoothTransport(BaseTransport):
         self._running = False
         self._adapter = None
         self._uuid = None
+        
+        # Auto-reconnection state
+        self.last_connected_address = None
+        self.auto_reconnect_enabled = True
+        self.is_reconnecting = False
+        self.on_reconnecting_status: Optional[Callable[[str], None]] = None
 
         if HAS_PYJNIUS:
             try:
@@ -55,8 +64,7 @@ class AndroidBluetoothTransport(BaseTransport):
             return False
         try:
             return bool(adapter.isEnabled())
-        except Exception as e:
-            print(f"[AndroidBluetooth] isEnabled error (possibly missing permission): {e}")
+        except Exception:
             return False
 
     def get_paired_devices(self) -> List[Dict[str, str]]:
@@ -113,6 +121,7 @@ class AndroidBluetoothTransport(BaseTransport):
                 try:
                     device = socket.getRemoteDevice()
                     self.peer_name = str(device.getName() or device.getAddress())
+                    self.last_connected_address = str(device.getAddress())
                 except Exception:
                     self.peer_name = "Remote Phone"
 
@@ -144,9 +153,10 @@ class AndroidBluetoothTransport(BaseTransport):
                 self.on_error(msg)
             return
 
+        self.last_connected_address = device_address_or_info
+
         def _connect():
             try:
-                # Cancel discovery as it slows down connections
                 try:
                     adapter.cancelDiscovery()
                 except Exception:
@@ -162,6 +172,7 @@ class AndroidBluetoothTransport(BaseTransport):
                 self._in_stream = socket.getInputStream()
                 self._out_stream = socket.getOutputStream()
                 self.is_connected = True
+                self.is_reconnecting = False
                 self._running = True
                 try:
                     self.peer_name = str(remote_device.getName() or device_address_or_info)
@@ -203,9 +214,55 @@ class AndroidBluetoothTransport(BaseTransport):
                 except Exception:
                     break
 
-            self.disconnect()
+            self._handle_unexpected_disconnect()
 
         threading.Thread(target=_read_loop, daemon=True).start()
+
+    def _handle_unexpected_disconnect(self):
+        """Attempts auto-reconnection if enabled before fully disconnecting."""
+        was_connected = self.is_connected
+        self.disconnect(trigger_callback=False)
+
+        if was_connected and self.auto_reconnect_enabled and self.last_connected_address:
+            self.is_reconnecting = True
+            if self.on_reconnecting_status:
+                self.on_reconnecting_status("reconnecting...")
+
+            def _auto_reconnect_worker():
+                for attempt in range(1, 4):
+                    if not self.is_reconnecting:
+                        break
+                    time.sleep(3.0)
+                    try:
+                        adapter = self._init_adapter()
+                        if not adapter or not adapter.isEnabled():
+                            break
+                        remote_device = adapter.getRemoteDevice(self.last_connected_address)
+                        socket = remote_device.createRfcommSocketToServiceRecord(self._uuid)
+                        socket.connect()
+
+                        self._client_socket = socket
+                        self._in_stream = socket.getInputStream()
+                        self._out_stream = socket.getOutputStream()
+                        self.is_connected = True
+                        self.is_reconnecting = False
+                        self._running = True
+
+                        if self.on_connected:
+                            self.on_connected(self.peer_name)
+                        self._start_reader()
+                        return
+                    except Exception as e:
+                        print(f"[AndroidBluetooth] Auto-reconnect attempt {attempt} failed: {e}")
+
+                self.is_reconnecting = False
+                if self.on_disconnected:
+                    self.on_disconnected()
+
+            threading.Thread(target=_auto_reconnect_worker, daemon=True).start()
+        else:
+            if self.on_disconnected:
+                self.on_disconnected()
 
     def send_data(self, data: bytes) -> bool:
         if not self.is_connected or not self._out_stream:
@@ -220,9 +277,10 @@ class AndroidBluetoothTransport(BaseTransport):
             self.disconnect()
             return False
 
-    def disconnect(self):
+    def disconnect(self, trigger_callback: bool = True):
         self._running = False
         self.is_connected = False
+        self.is_reconnecting = False
 
         if self._in_stream:
             try:
@@ -252,5 +310,5 @@ class AndroidBluetoothTransport(BaseTransport):
                 pass
             self._server_socket = None
 
-        if self.on_disconnected:
+        if trigger_callback and self.on_disconnected:
             self.on_disconnected()

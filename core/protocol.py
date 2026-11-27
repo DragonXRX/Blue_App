@@ -62,11 +62,20 @@ class Packet:
 
     @staticmethod
     def create_chunk_packet(file_id: str, chunk_index: int, total_chunks: int, chunk_data: bytes) -> 'Packet':
-        # File ID header (12 bytes fixed string) + 4 bytes chunk_index + 4 bytes total_chunks + 4 bytes CRC32 + chunk_data
         file_id_bytes = file_id.encode("utf-8")[:12].ljust(12, b" ")
         chunk_crc = zlib.crc32(chunk_data) & 0xffffffff
-        chunk_header = struct.pack(">12sIII", file_id_bytes, chunk_index, total_chunks, chunk_crc)
-        return Packet(PKT_PROGRESS, chunk_header + chunk_data)
+
+        # Fast compression (level 1) to reduce Bluetooth transmission time
+        compressed = zlib.compress(chunk_data, level=1)
+        if len(compressed) < len(chunk_data):
+            is_comp = 1
+            payload_data = compressed
+        else:
+            is_comp = 0
+            payload_data = chunk_data
+
+        chunk_header = struct.pack(">12sIIIB", file_id_bytes, chunk_index, total_chunks, chunk_crc, is_comp)
+        return Packet(PKT_PROGRESS, chunk_header + payload_data)
 
 
 class PacketParser:
