@@ -1,3 +1,4 @@
+#!python3.11
 """
 BlueChat - Main Application Entry Point
 Supports both Android (native Bluetooth RFCOMM via Pyjnius) and Desktop Simulation mode.
