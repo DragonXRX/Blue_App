@@ -20,6 +20,7 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.filechooser import FileChooserListView
 from kivy.clock import Clock
+from kivy.animation import Animation
 from kivy.graphics import Color, Rectangle, RoundedRectangle, Ellipse
 from kivy.metrics import dp
 from kivy.core.window import Window
@@ -234,7 +235,6 @@ class ChatScreen(Screen):
             padding=[dp(12), dp(10), dp(12), dp(10)]
         )
         self.text_input.bind(text=self._on_input_text_change)
-        self.text_input.bind(focus=self._on_input_focus_change)
         self.text_input.bind(on_text_validate=lambda *_: self._send_text_message())
         self.input_bar.add_widget(self.text_input)
 
@@ -282,23 +282,14 @@ class ChatScreen(Screen):
     def _setup_keyboard_listener(self):
         Window.bind(on_keyboard_height=self._on_keyboard_height_change)
 
-    def _on_input_focus_change(self, instance, is_focused):
-        if is_focused:
-            # When user focuses input, if on_keyboard_height hasn't fired yet or returns 0 on some devices,
-            # ensure input area is kept visible and scroll to bottom
-            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.15)
-            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.35)
-        else:
-            if self.keyboard_height == 0:
-                self.keyboard_spacer.height = 0
-
     def _on_keyboard_height_change(self, window, height):
-        self.keyboard_height = max(0, height)
-        # Update spacer height so the input bar is elevated exactly above the keyboard
-        self.keyboard_spacer.height = self.keyboard_height
-        if self.keyboard_height > 0:
-            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.05)
-            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.2)
+        target_h = max(0, height)
+        # Smoothly animate the spacer height matching the soft keyboard movement
+        Animation.stop_all(self.keyboard_spacer)
+        anim = Animation(height=target_h, d=0.22, t='out_quad')
+        anim.start(self.keyboard_spacer)
+        if target_h > 0:
+            Clock.schedule_once(lambda dt: self._scroll_to_bottom(), 0.1)
 
     def _setup_transport_callbacks(self):
         self.transport.on_connected = self._on_connected
